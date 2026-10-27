@@ -1,0 +1,19 @@
+# Dependências e arquivos de ambiente de desenvolvimento
+.vscode/
+.idea/
+.gemini/
+*.log
+*.tmp
+*.bak
+scratch/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Imagens de telas e mídias de demonstração com dados de operação
+imagens/
+
+# Cópias de segurança, fontes descompilados e artefatos de engenharia reversa do ERP
+backup/
