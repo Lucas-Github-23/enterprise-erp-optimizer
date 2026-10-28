@@ -218,7 +218,7 @@ Como se trata de uma extensao voltada a um sistema empresarial privado, a execuc
 
 1. Clone ou baixe este repositorio para a sua maquina local:
    ```bash
-   git clone https://github.com/SEU_USUARIO/enterprise-erp-optimizer.git
+   git clone https://github.com/Lucas-Github-23/enterprise-erp-optimizer.git
    ```
 2. Abra o navegador e acesse a pagina de gerenciamento de extensoes:
    * Google Chrome: `chrome://extensions/`
