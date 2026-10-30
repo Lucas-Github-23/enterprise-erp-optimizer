@@ -1812,23 +1812,11 @@ function buscarItensNoServidorEAvancar(ctrl, grid, itensCsv, dtIniVal, dtFimVal,
     progressBar.updateProgress(0, 'Iniciando busca no servidor...');
     lblStatus.update('<div style="font-size: 11px; color: #15428b; font-weight: bold;">Consultando ' + totalOps + ' OPs no banco de dados do ERP...</div>');
 
-    var urlListar = (grid.store && grid.store.proxy && grid.store.proxy.url) ? grid.store.proxy.url : 'ManutencaoDeDatas/Listar';
-    var proxyMethod = (grid.store && grid.store.proxy && grid.store.proxy.actionMethods && grid.store.proxy.actionMethods.read) ? grid.store.proxy.actionMethods.read : 'GET';
+    var urlListar = (grid.store && grid.store.proxy && grid.store.proxy.url) ? grid.store.proxy.url : '/ag2web.aplicacao/ManutencaoDeDatas/Listar';
+    var proxyMethod = 'GET';
 
-    var extraParamsPadrao = (grid.store && grid.store.proxy && grid.store.proxy.extraParams) ? Ext.apply({}, grid.store.proxy.extraParams) : {};
-    if (ctrl && ctrl.model && ctrl.model.data) {
-        for (var pKey in ctrl.model.data) {
-            if (ctrl.model.data.hasOwnProperty(pKey) && ctrl.model.data[pKey] !== undefined && ctrl.model.data[pKey] !== null && extraParamsPadrao[pKey] === undefined) {
-                extraParamsPadrao[pKey] = ctrl.model.data[pKey];
-            }
-        }
-    }
-
+    var extraParamsPadrao = (grid.store && grid.store.proxy && grid.store.proxy.extraParams) ? grid.store.proxy.extraParams : {};
     var tmvPadrao = extraParamsPadrao.tmv || extraParamsPadrao.IdDoTipoDeMovimento || (ctrl.model && ctrl.model.data ? ctrl.model.data.IdDoTipoDeMovimento : 'I507');
-    var perfilPadrao = extraParamsPadrao.perfilTMV || extraParamsPadrao.PerfilTMV || (ctrl.model && ctrl.model.data ? ctrl.model.data.PerfilTMV : 'VDA0601');
-
-    var sf = grid.textField || (grid.down ? grid.down('[name=searchField]') : null);
-    var paramPesquisa = (sf && sf.paramName) ? sf.paramName : 'valorDeConsulta';
 
     if (!Array.isArray(ctrl.listaDeItensParaManutencao)) {
         ctrl.listaDeItensParaManutencao = [];
@@ -1883,40 +1871,31 @@ function buscarItensNoServidorEAvancar(ctrl, grid, itensCsv, dtIniVal, dtFimVal,
         var itensDestaOp = mapaOps[opAtual] || [];
         var codAuxPrimeiro = (itensDestaOp[0] && itensDestaOp[0].codigoAuxiliar) ? String(itensDestaOp[0].codigoAuxiliar).trim() : '';
 
-        function montarParams(termo, formatoData, usarRangeDoc) {
-            var p = Ext.apply({}, extraParamsPadrao);
-            p.limit = 100;
-            p.page = 1;
-            p.start = 0;
+        // Monta os exatos parametros esperados pelo metodo C# ActionResult Listar(...)
+        // NUNCA incluir nomes duplicados ou variantes PascalCase (ex: DataInicial)
+        // pois o ASP.NET MVC combina chaves duplicadas em string separada por virgula ("data1,data2")
+        function montarParams(termo, usarRangeDoc) {
+            var p = {
+                page: 1,
+                start: 0,
+                limit: 100,
+                tmv: tmvPadrao,
+                dataInicial: new Date(2020, 0, 1),
+                dataFinal: new Date(2030, 11, 31)
+            };
 
-            if (formatoData === 'iso') {
-                p.dataInicial = '2020-01-01';
-                p.DataInicial = '2020-01-01';
-                p.dataFinal = '2030-12-31';
-                p.DataFinal = '2030-12-31';
-            } else {
-                p.dataInicial = '01/01/2020';
-                p.DataInicial = '01/01/2020';
-                p.dataFinal = '31/12/2030';
-                p.DataFinal = '31/12/2030';
+            if (extraParamsPadrao.idDoProduto) {
+                p.idDoProduto = extraParamsPadrao.idDoProduto;
             }
 
-            p.tmv = tmvPadrao;
-            p.IdDoTipoDeMovimento = tmvPadrao;
-            p.perfilTMV = perfilPadrao;
-            p.PerfilTMV = perfilPadrao;
-
             if (usarRangeDoc) {
-                p.numeroDocumentoInicial = termo;
-                p.numeroDocumentoFinal = termo;
-                p.NumeroDocumentoInicial = termo;
-                p.NumeroDocumentoFinal = termo;
-                delete p.valorDeConsulta;
-                delete p.query;
+                var numInt = parseInt(termo, 10);
+                if (!isNaN(numInt)) {
+                    p.numeroDocumentoInicial = numInt;
+                    p.numeroDocumentoFinal = numInt;
+                }
             } else {
-                p[paramPesquisa] = termo;
                 p.valorDeConsulta = termo;
-                p.query = termo;
             }
 
             return p;
@@ -1925,17 +1904,14 @@ function buscarItensNoServidorEAvancar(ctrl, grid, itensCsv, dtIniVal, dtFimVal,
         function tentarConsulta(tentativaIdx) {
             var params;
             if (tentativaIdx === 1) {
-                // Tentativa 1: busca pelo numero da OP com datas no padrao brasileiro (dd/MM/yyyy)
-                params = montarParams(opAtual, 'br', false);
+                // Tentativa 1: busca pelo numero da OP via valorDeConsulta
+                params = montarParams(opAtual, false);
             } else if (tentativaIdx === 2 && codAuxPrimeiro) {
                 // Tentativa 2: busca pelo Codigo Auxiliar (ex: LBX0153/26P)
-                params = montarParams(codAuxPrimeiro, 'br', false);
+                params = montarParams(codAuxPrimeiro, false);
             } else if (tentativaIdx === 3) {
-                // Tentativa 3: busca pelo numero da OP com datas no padrao ISO (yyyy-MM-dd)
-                params = montarParams(opAtual, 'iso', false);
-            } else if (tentativaIdx === 4) {
-                // Tentativa 4: busca via intervalo de documentos (numeroDocumentoInicial / Final)
-                params = montarParams(opAtual, 'br', true);
+                // Tentativa 3: busca via filtro de faixa de documento (numeroDocumentoInicial / Final)
+                params = montarParams(opAtual, true);
             } else {
                 opsNaoEncontradas.push(opAtual);
                 avancarProgresso();
@@ -7140,6 +7116,7 @@ const extJsInitializationMonitor = setInterval(() => {
         });
 
         window.Ext.Ajax.on('requestexception', function(connection, response, options) {
+            if (options && options._isBuscaAutomaticaCsv) return;
             if (options.url && (options.url.indexOf('AutorizarProducao') !== -1 || options.url.indexOf('AutorizarProducaoAdministrativamente') !== -1)) {
                 fecharPopupAutorizacaoProducao();
                 setTimeout(fecharPopupAutorizacaoProducao, 30);
