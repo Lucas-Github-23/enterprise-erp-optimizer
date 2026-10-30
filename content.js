@@ -1588,6 +1588,7 @@ function registroCorrespondeDocOuAux(reg, termo) {
 
 
 // --------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 // 6.3.1 Importacao e Selecao em Massa de Itens via CSV / Lista (Manutencao de Datas)
 // --------------------------------------------------------------------------
 
@@ -1720,6 +1721,24 @@ function itemCorrespondeAoRegistro(itemCsv, reg) {
     return true;
 }
 
+function adicionarItemSeNaoExistir(lista, modelReg) {
+    if (!lista || !modelReg) return false;
+    var d = modelReg.data || modelReg;
+    var idDoc = d.IDDoDocumento;
+    var numItem = d.NumeroDoItem;
+    var numSub = d.NumeroDoSubItem;
+
+    for (var i = 0; i < lista.length; i++) {
+        var exist = lista[i].data || lista[i];
+        if (exist.IDDoDocumento == idDoc && exist.NumeroDoItem == numItem && exist.NumeroDoSubItem == numSub) {
+            lista[i] = modelReg;
+            return false;
+        }
+    }
+    lista.push(modelReg);
+    return true;
+}
+
 function avancarParaPasso3Manutencao(ctrl, grid) {
     if (!ctrl) ctrl = obterControllerManutencao(grid);
     if (!ctrl) return;
@@ -1727,14 +1746,16 @@ function avancarParaPasso3Manutencao(ctrl, grid) {
     var p = grid.up('EditViewDeSelecaoDeDocumentoParaManutencaoDeDatas') || grid.up('formularioPadrao') || grid.up('panel');
     var cfg = (p && p.config) ? p.config : null;
 
-    if (ctrl.assistente && typeof ctrl.ativarPasso === 'function' && cfg) {
+    if (cfg && typeof ctrl.acaoProximo === 'function') {
+        ctrl.acaoProximo(cfg);
+    } else if (ctrl.assistente && typeof ctrl.ativarPasso === 'function' && cfg) {
         ctrl.ativarPasso(cfg, ctrl.assistente.setarPasso(3));
     } else {
         var botoes = Ext.ComponentQuery.query('button') || [];
         for (var i = 0; i < botoes.length; i++) {
             var b = botoes[i];
             var txt = (b.text || '').toLowerCase().trim();
-            if ((txt.indexOf('próximo') !== -1 || txt.indexOf('proximo') !== -1) && !b.isDisabled()) {
+            if ((txt === 'próximo' || txt === 'proximo' || txt.indexOf('próximo') !== -1 || txt.indexOf('proximo') !== -1) && !b.isDisabled()) {
                 if (typeof b.handler === 'function') {
                     b.handler.call(b.scope || b, b);
                 } else {
@@ -1746,6 +1767,170 @@ function avancarParaPasso3Manutencao(ctrl, grid) {
     }
 }
 
+function buscarItensNoServidorEAvancar(ctrl, grid, itensCsv, dtIniVal, dtFimVal, motivoVal, obsVal, win, progressBar, lblStatus, btnAcao) {
+    var mapaOps = {};
+    itensCsv.forEach(function(it) {
+        var d = String(it.documento || '').trim();
+        if (d) {
+            var matchNum = d.match(/(?:-|\s|^)(\d+)$/);
+            var puro = matchNum ? matchNum[1] : d;
+            if (!mapaOps[puro]) {
+                mapaOps[puro] = [];
+            }
+            mapaOps[puro].push(it);
+        }
+    });
+
+    var listaOps = Object.keys(mapaOps);
+    var totalOps = listaOps.length;
+
+    if (totalOps === 0) {
+        lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Nenhuma OP ou Documento identificado no texto/CSV.</div>');
+        btnAcao.setDisabled(false);
+        return;
+    }
+
+    btnAcao.setDisabled(true);
+    progressBar.setVisible(true);
+    progressBar.updateProgress(0, 'Iniciando busca no servidor...');
+    lblStatus.update('<div style="font-size: 11px; color: #15428b; font-weight: bold;">Consultando ' + totalOps + ' OPs no banco de dados do ERP...</div>');
+
+    var urlListar = (grid.store && grid.store.proxy && grid.store.proxy.url) ? grid.store.proxy.url : 'ManutencaoDeDatas/Listar';
+    var extraParamsPadrao = (grid.store && grid.store.proxy && grid.store.proxy.extraParams) ? grid.store.proxy.extraParams : {};
+
+    var tmvPadrao = extraParamsPadrao.tmv || (ctrl.model && ctrl.model.data ? ctrl.model.data.IdDoTipoDeMovimento : null);
+    var perfilPadrao = extraParamsPadrao.perfilTMV || (ctrl.model && ctrl.model.data ? ctrl.model.data.PerfilTMV : null);
+
+    if (!Array.isArray(ctrl.listaDeItensParaManutencao)) {
+        ctrl.listaDeItensParaManutencao = [];
+    }
+
+    var itensEncontrados = 0;
+    var opsConcluidas = 0;
+    var opsNaoEncontradas = [];
+    var cancelado = false;
+
+    var CONCORRENCIA = 4;
+    var indiceOpAtual = 0;
+
+    function processarProximaOp() {
+        if (cancelado) return;
+
+        if (indiceOpAtual >= totalOps) {
+            if (opsConcluidas >= totalOps) {
+                finalizarBusca();
+            }
+            return;
+        }
+
+        var opAtual = listaOps[indiceOpAtual++];
+        var params = {
+            valorDeConsulta: opAtual,
+            limit: 100,
+            page: 1,
+            start: 0
+        };
+        if (tmvPadrao) params.tmv = tmvPadrao;
+        if (perfilPadrao) params.perfilTMV = perfilPadrao;
+
+        Ext.Ajax.request({
+            url: urlListar,
+            method: 'GET',
+            params: params,
+            timeout: 30000,
+            success: function(resp) {
+                var dados;
+                try {
+                    dados = Ext.decode(resp.responseText);
+                } catch(e) {
+                    dados = {};
+                }
+
+                var registros = (dados && Array.isArray(dados.registros)) ? dados.registros : [];
+                var achouAlgum = false;
+
+                if (registros.length > 0) {
+                    var itensDestaOp = mapaOps[opAtual] || [];
+                    for (var r = 0; r < registros.length; r++) {
+                        var regRaw = registros[r];
+                        var modelReg = Ext.create('GMF.model.Projecao.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ProjecaoDeManutencaoDeDatasDeProducao', regRaw);
+
+                        for (var k = 0; k < itensDestaOp.length; k++) {
+                            var itCsv = itensDestaOp[k];
+                            if (itemCorrespondeAoRegistro(itCsv, modelReg)) {
+                                achouAlgum = true;
+                                var dataIniFinal = itCsv.novaData ? converterDataBr(itCsv.novaData) : dtIniVal;
+                                var dataFimFinal = itCsv.novaData ? converterDataBr(itCsv.novaData) : (dtFimVal || dtIniVal);
+
+                                modelReg.data.DataPrevisaoInicioAtual = dataIniFinal;
+                                modelReg.data.DataPrevisaoFinalAtual = dataFimFinal;
+                                modelReg.data.CodigoDoMotivo = motivoVal;
+                                modelReg.data.Observacao = obsVal;
+
+                                adicionarItemSeNaoExistir(ctrl.listaDeItensParaManutencao, modelReg);
+                                itensEncontrados++;
+                            }
+                        }
+                    }
+                }
+
+                if (!achouAlgum) {
+                    opsNaoEncontradas.push(opAtual);
+                }
+
+                opsConcluidas++;
+                var pct = totalOps > 0 ? (opsConcluidas / totalOps) : 1;
+                progressBar.updateProgress(pct, Math.round(pct * 100) + '% (' + opsConcluidas + ' de ' + totalOps + ' OPs)');
+                lblStatus.update('<div style="font-size: 11px; color: #1e293b;">Buscando no servidor... <b>' + itensEncontrados + '</b> item(ns) prontos localizados.</div>');
+
+                if (indiceOpAtual < totalOps) {
+                    processarProximaOp();
+                } else if (opsConcluidas >= totalOps) {
+                    finalizarBusca();
+                }
+            },
+            failure: function() {
+                opsNaoEncontradas.push(opAtual);
+                opsConcluidas++;
+                var pct = totalOps > 0 ? (opsConcluidas / totalOps) : 1;
+                progressBar.updateProgress(pct, Math.round(pct * 100) + '% (' + opsConcluidas + ' de ' + totalOps + ' OPs)');
+
+                if (indiceOpAtual < totalOps) {
+                    processarProximaOp();
+                } else if (opsConcluidas >= totalOps) {
+                    finalizarBusca();
+                }
+            }
+        });
+    }
+
+    function finalizarBusca() {
+        btnAcao.setDisabled(false);
+        progressBar.updateProgress(1, '100% - Busca concluida!');
+
+        if (itensEncontrados > 0) {
+            var msgSucesso = '<div style="font-size: 12px; color: #15803d; font-weight: bold; margin-top: 6px;">' + itensEncontrados + ' item(ns) localizado(s) no servidor e preparados com as novas datas!</div>';
+            if (opsNaoEncontradas.length > 0) {
+                msgSucesso += '<div style="font-size: 10px; color: #b45309; margin-top: 4px;">OPs nao localizadas no ERP (' + opsNaoEncontradas.length + '): ' + opsNaoEncontradas.slice(0, 8).join(', ') + (opsNaoEncontradas.length > 8 ? '...' : '') + '</div>';
+            }
+            msgSucesso += '<div style="font-size: 11px; color: #15428b; font-weight: 600; margin-top: 6px;">Avancando para o Passo 3 (Confirmacao)...</div>';
+            lblStatus.update(msgSucesso);
+
+            setTimeout(function() {
+                try { win.close(); } catch(e) {}
+                avancarParaPasso3Manutencao(ctrl, grid);
+                mostrarToastNotificacao(ctrl.listaDeItensParaManutencao.length + ' item(ns) carregados para confirmacao no Passo 3!');
+            }, 1000);
+        } else {
+            lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold; margin-top: 6px;">Nenhum dos itens informados foi localizado no servidor do ERP. Verifique se os numeros das OPs estao corretos.</div>');
+        }
+    }
+
+    for (var i = 0; i < Math.min(CONCORRENCIA, totalOps); i++) {
+        processarProximaOp();
+    }
+}
+
 function abrirModalImportacaoCsvManutencaoDatas(grid) {
     if (!grid || grid.isDestroyed) return;
     var ctrl = obterControllerManutencao(grid);
@@ -1754,7 +1939,7 @@ function abrirModalImportacaoCsvManutencaoDatas(grid) {
         itemId: 'txtConteudoCsv',
         fieldLabel: 'Conteudo CSV ou Lista de OPs',
         labelAlign: 'top',
-        emptyText: 'Cole aqui os dados do CSV exportado pelo painel ou uma lista simples de OPs.\n\nExemplos aceitos:\n2013;5.0;30/10/2026\n20489;1.0;30/10/2026\n\nOu apenas OPs (uma por linha):\n2013\n20489\n21372',
+        emptyText: 'Cole aqui os dados do CSV exportado pelo painel ou uma lista simples de OPs.\n\nExemplos aceitos:\n2013;5.0;30/10/2026\n20489;1.0;30/10/2026\n\nOu apenas o numero das OPs (uma por linha):\n2013\n20489\n21372',
         height: 180,
         width: '100%',
         cls: 'ag-textarea-csv'
@@ -1800,9 +1985,20 @@ function abrirModalImportacaoCsvManutencaoDatas(grid) {
         labelWidth: 130
     });
 
+    var progressBar = Ext.create('Ext.ProgressBar', {
+        itemId: 'progressImportacaoCsv',
+        width: '100%',
+        height: 20,
+        value: 0,
+        text: 'Aguardando inicio...',
+        hidden: true,
+        cls: 'ag-progressbar-lote',
+        margin: '8 0 4 0'
+    });
+
     var lblStatus = Ext.create('Ext.Component', {
         itemId: 'lblStatusCsv',
-        html: '<div style="font-size: 11px; color: #64748b; margin-top: 6px;">Pronto para processar lista ou arquivo CSV.</div>'
+        html: '<div style="font-size: 11px; color: #64748b; margin-top: 6px;">Cole os dados ou carregue o CSV e clique em Buscar no Servidor e Avancar para o Passo 3.</div>'
     });
 
     var btnCarregarArquivo = Ext.create('Ext.button.Button', {
@@ -1833,17 +2029,49 @@ function abrirModalImportacaoCsvManutencaoDatas(grid) {
         }
     });
 
+    var btnBuscarEAvancar = Ext.create('Ext.button.Button', {
+        text: 'Buscar no Servidor e Avancar para o Passo 3',
+        tooltip: 'Localiza todos os itens do CSV diretamente no banco do ERP, aplica as novas datas e leva direto para a Confirmacao',
+        cls: 'ag-btn-extjs ag-btn-destaque-csv',
+        handler: function() {
+            var texto = txtCsv.getValue();
+            var itens = parsearCsvManutencaoDatas(texto);
+            if (!itens.length) {
+                lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Nenhum item valido encontrado no texto/CSV.</div>');
+                return;
+            }
+
+            var dtIniVal = dtInicio.getValue();
+            var dtFimVal = dtFim.getValue();
+            var motivoVal = txtMotivo.getValue() || 'P4';
+            var obsVal = txtObs.getValue() || '';
+
+            if (!dtIniVal) {
+                lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Informe a Nova Previsao Inicio.</div>');
+                return;
+            }
+
+            ctrl = ctrl || obterControllerManutencao(grid);
+            if (!ctrl) {
+                lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Controller de Manutencao de Datas nao localizado.</div>');
+                return;
+            }
+
+            buscarItensNoServidorEAvancar(ctrl, grid, itens, dtIniVal, dtFimVal, motivoVal, obsVal, win, progressBar, lblStatus, btnBuscarEAvancar);
+        }
+    });
+
     var win = Ext.create('Ext.window.Window', {
         title: 'Manutencao de Datas - Importacao de Itens (via CSV / Lista)',
-        width: 580,
+        width: 600,
         bodyPadding: '14 18',
         modal: true,
         resizable: true,
         items: [
             {
                 xtype: 'component',
-                html: '<div style="font-size: 13px; font-weight: bold; color: #15428b; margin-bottom: 4px;">Selecao em Massa de Itens para Adiantamento</div>' +
-                      '<div style="font-size: 11px; color: #64748b; margin-bottom: 12px;">Cole a lista exportada do painel ou carregue o arquivo CSV. O sistema localizara os itens e aplicara as novas datas com motivo P4.</div>'
+                html: '<div style="font-size: 13px; font-weight: bold; color: #15428b; margin-bottom: 4px;">Alteracao de Datas em Massa via CSV / Lista</div>' +
+                      '<div style="font-size: 11px; color: #64748b; margin-bottom: 12px;">Cole a lista exportada do painel ou carregue o CSV. A extensao busca cada OP diretamente no banco do ERP, aplica as novas datas e o motivo P4, e envia tudo direto para a Confirmacao (Passo 3).</div>'
             },
             btnCarregarArquivo,
             { xtype: 'component', html: '<div style="margin-top: 8px;"></div>' },
@@ -1861,121 +2089,11 @@ function abrirModalImportacaoCsvManutencaoDatas(grid) {
                 items: [txtMotivo]
             },
             txtObs,
+            progressBar,
             lblStatus
         ],
         buttons: [
-            {
-                text: 'Selecionar na Grade Atual',
-                tooltip: 'Marca os checkboxes dos itens encontrados na pagina atual da grade',
-                cls: 'ag-btn-extjs',
-                handler: function() {
-                    var texto = txtCsv.getValue();
-                    var itens = parsearCsvManutencaoDatas(texto);
-                    if (!itens.length) {
-                        lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Nenhum item valido encontrado no texto/CSV.</div>');
-                        return;
-                    }
-
-                    var store = grid.getStore();
-                    if (!store) return;
-
-                    var selecionados = [];
-                    var encontrados = 0;
-
-                    store.each(function(rec) {
-                        for (var i = 0; i < itens.length; i++) {
-                            if (itemCorrespondeAoRegistro(itens[i], rec)) {
-                                selecionados.push(rec);
-                                encontrados++;
-                                break;
-                            }
-                        }
-                    });
-
-                    if (selecionados.length > 0) {
-                        grid.getSelectionModel().select(selecionados, false);
-                        lblStatus.update('<div style="font-size: 11px; color: #15803d; font-weight: bold;">' + encontrados + ' item(ns) selecionado(s) na grade atual com sucesso!</div>');
-                        mostrarToastNotificacao(encontrados + ' item(ns) selecionado(s) na grade!');
-                    } else {
-                        lblStatus.update('<div style="font-size: 11px; color: #b45309; font-weight: bold;">Nenhum dos ' + itens.length + ' itens do CSV foi encontrado na pagina atual da grade (verifique se estao em outras paginas ou se o filtro de busca no Passo 1 abrange os itens).</div>');
-                    }
-                }
-            },
-            {
-                text: 'Aplicar Datas e Avancar para Passo 3',
-                tooltip: 'Aplica as novas datas nos itens correspondentes e avanca diretamente para a Confirmacao (Passo 3)',
-                cls: 'ag-btn-extjs ag-btn-destaque-csv',
-                handler: function() {
-                    var texto = txtCsv.getValue();
-                    var itens = parsearCsvManutencaoDatas(texto);
-                    if (!itens.length) {
-                        lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Nenhum item valido encontrado no texto/CSV.</div>');
-                        return;
-                    }
-
-                    var dtIniVal = dtInicio.getValue();
-                    var dtFimVal = dtFim.getValue();
-                    var motivoVal = txtMotivo.getValue() || 'P4';
-                    var obsVal = txtObs.getValue() || '';
-
-                    if (!dtIniVal) {
-                        lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Informe a Nova Previsao Inicio.</div>');
-                        return;
-                    }
-
-                    ctrl = ctrl || obterControllerManutencao(grid);
-                    if (!ctrl) {
-                        lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Controller de Manutencao de Datas nao localizado.</div>');
-                        return;
-                    }
-
-                    if (!Array.isArray(ctrl.listaDeItensParaManutencao)) {
-                        ctrl.listaDeItensParaManutencao = [];
-                    }
-
-                    var store = grid.getStore();
-                    var adicionados = 0;
-
-                    itens.forEach(function(itemCsv) {
-                        if (store) {
-                            store.each(function(rec) {
-                                if (itemCorrespondeAoRegistro(itemCsv, rec)) {
-                                    var dataIniFinal = itemCsv.novaData ? converterDataBr(itemCsv.novaData) : dtIniVal;
-                                    var dataFimFinal = itemCsv.novaData ? converterDataBr(itemCsv.novaData) : (dtFimVal || dtIniVal);
-
-                                    rec.data.DataPrevisaoInicioAtual = dataIniFinal;
-                                    rec.data.DataPrevisaoFinalAtual = dataFimFinal;
-                                    rec.data.CodigoDoMotivo = motivoVal;
-                                    rec.data.Observacao = obsVal;
-
-                                    var jaExiste = false;
-                                    for (var k = 0; k < ctrl.listaDeItensParaManutencao.length; k++) {
-                                        var itC = ctrl.listaDeItensParaManutencao[k];
-                                        var cd = itC.data || itC;
-                                        if (cd.IDDoDocumento == rec.data.IDDoDocumento && cd.NumeroDoItem == rec.data.NumeroDoItem && cd.NumeroDoSubItem == rec.data.NumeroDoSubItem) {
-                                            ctrl.listaDeItensParaManutencao[k] = rec;
-                                            jaExiste = true;
-                                            break;
-                                        }
-                                    }
-                                    if (!jaExiste) {
-                                        ctrl.listaDeItensParaManutencao.push(rec);
-                                        adicionados++;
-                                    }
-                                }
-                            });
-                        }
-                    });
-
-                    if (ctrl.listaDeItensParaManutencao.length > 0) {
-                        win.close();
-                        avancarParaPasso3Manutencao(ctrl, grid);
-                        mostrarToastNotificacao(ctrl.listaDeItensParaManutencao.length + ' item(ns) preparados para confirmacao no Passo 3!');
-                    } else {
-                        lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Nenhum item correspondente foi localizado na grade atual para aplicacao.</div>');
-                    }
-                }
-            },
+            btnBuscarEAvancar,
             {
                 text: 'Fechar',
                 cls: 'ag-btn-extjs',
