@@ -783,7 +783,7 @@ function executarFinalizacaoIndividual(record, grid) {
                             if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes && window.GMF.servico.Util.Funcoes.customMessageBox) {
                                 window.GMF.servico.Util.Funcoes.customMessageBox("Controle de Produção", "Produção finalizada com sucesso.", Ext.MessageBox.INFO);
                             } else {
-                                mostrarToastNotificacao('✔ ' + numDoc + ' finalizada com sucesso!');
+                                mostrarToastNotificacao('' + numDoc + ' finalizada com sucesso!');
                             }
                         },
                         failure: function() {
@@ -2455,7 +2455,7 @@ function atualizarBadgeOpsBloqueadasMRP() {
                 var btn = topTb.down ? topTb.down('#btnOpsBloqueadasMRP') : null;
                 if (btn) {
                     if (count > 0) {
-                        btn.setText('🚫 MRP (' + count + ')');
+                        btn.setText('MRP (' + count + ')');
                         btn.show();
                     } else {
                         btn.hide();
@@ -2532,7 +2532,7 @@ function abrirJanelaOpsBloqueadasMRP() {
                             removerOpBloqueadaMRP(id);
                             storeBloqueadas.remove(record);
                             win.setTitle('Operações Ocultadas por Pendência no MRP (' + storeBloqueadas.getCount() + ')');
-                            mostrarToastNotificacao('✔ Operação desbloqueada! Recarregue a consulta para reexibi-la.');
+                            mostrarToastNotificacao('Operação desbloqueada! Recarregue a consulta para reexibi-la.');
                             if (storeBloqueadas.getCount() === 0) {
                                 win.close();
                             }
@@ -2554,7 +2554,7 @@ function abrirJanelaOpsBloqueadasMRP() {
                             if (btn === 'yes') {
                                 limparTodasOpsBloqueadasMRP();
                                 win.close();
-                                mostrarToastNotificacao('✔ Todas as operações foram desbloqueadas!');
+                                mostrarToastNotificacao('Todas as operações foram desbloqueadas!');
                                 var g = obterGridProducaoAtivo();
                                 if (g) {
                                     var pt = g.down ? g.down('pagingtoolbar') : null;
@@ -2819,7 +2819,7 @@ function tratarPossivelErroMRP(response, options) {
         atualizarBadgeOpsBloqueadasMRP();
 
         var txtDocs = nomesDocumentos.length > 0 ? nomesDocumentos.join(', ') : 'Operação';
-        mostrarToastNotificacao('🚫 <b>' + txtDocs + '</b> retida por pendência no MRP e ocultada da lista.<br>Armazenada para permitir liberar as demais sem travamentos!');
+        mostrarToastNotificacao('<b>' + txtDocs + '</b> retida por pendência no MRP e ocultada da lista.<br>Armazenada para permitir liberar as demais sem travamentos!');
 
     } catch (err) {
         console.error('[ERP Optimizer] Erro ao tratar erro de MRP:', err);
@@ -2841,7 +2841,7 @@ function hookCustomMessageBox() {
                             msg.indexOf('não foi completamente analisado') !== -1
                         );
                         if (ehMRP) {
-                            msg = msg + '<br><br><span style="color:#15428b;font-weight:bold;">💡 ERP Optimizer:</span> Esta operação foi retida no armazenamento da extensão e ocultada da tela para você continuar liberando as demais.';
+                            msg = msg + '<br><br><span style="color:#15428b;font-weight:bold;">ERP Optimizer:</span> Esta operação foi retida no armazenamento da extensão e ocultada da tela para você continuar liberando as demais.';
                             limparMascarasOrfas();
                         }
                     }
@@ -3240,7 +3240,7 @@ function atualizarElementosDoGrid(grid) {
         // Remove eventuais botões antigos com estilo verde ou duplicados
         if (pt.items && pt.items.each) {
             pt.items.each(function(item) {
-                if (item && item.text && (item.text.indexOf('⚡') !== -1 || (item.text.indexOf('Finalizar') !== -1 && item.itemId !== 'btnFinalizarSelecionadasPt'))) {
+                if (item && item.text && (item.text.indexOf('') !== -1 || (item.text.indexOf('Finalizar') !== -1 && item.itemId !== 'btnFinalizarSelecionadasPt'))) {
                     try { pt.remove(item); } catch(e){}
                 }
             });
@@ -3274,7 +3274,7 @@ function atualizarElementosDoGrid(grid) {
         // Remove eventuais botões antigos com estilo verde ou duplicados
         if (topTb.items && topTb.items.each) {
             topTb.items.each(function(item) {
-                if (item && item.text && (item.text.indexOf('⚡') !== -1 || (item.text.indexOf('Finalizar') !== -1 && item.itemId !== 'btnFinalizarSelecionadasTop'))) {
+                if (item && item.text && (item.text.indexOf('') !== -1 || (item.text.indexOf('Finalizar') !== -1 && item.itemId !== 'btnFinalizarSelecionadasTop'))) {
                     try { topTb.remove(item); } catch(e){}
                 }
             });
@@ -3310,7 +3310,7 @@ function atualizarElementosDoGrid(grid) {
                             } catch(e) {}
 
                             window.dispatchEvent(new CustomEvent('erp_modo_liberacao_alterado', { detail: { ativo: !!novoValor } }));
-                                                        mostrarToastNotificacao(novoValor ? '✔ Modo Liberação ativado: buscando todas as OPs...' : 'Modo Liberação desativado');
+                                                        mostrarToastNotificacao(novoValor ? 'Modo Liberação ativado: buscando todas as OPs...' : 'Modo Liberação desativado');
 
                             var pt = grid.down ? grid.down('pagingtoolbar') : null;
                             if (pt) {
@@ -3333,7 +3333,7 @@ function atualizarElementosDoGrid(grid) {
                 var qtdBloqInicial = Object.keys(mapaBloqInicial).length;
                 var btnMrpComp = Ext.create('Ext.button.Button', {
                     itemId: 'btnOpsBloqueadasMRP',
-                    text: '🚫 MRP (' + qtdBloqInicial + ')',
+                    text: 'MRP (' + qtdBloqInicial + ')',
                     tooltip: 'Operações com pendência de MRP ocultadas (clique para listar ou restaurar)',
                     cls: 'ag-btn-mrp',
                     hidden: qtdBloqInicial === 0,
@@ -3393,7 +3393,7 @@ function atualizarElementosDoGrid(grid) {
                     var qtdBloqAtual = Object.keys(mapaBloqAtual).length;
                     var btnMrp = Ext.create('Ext.button.Button', {
                         itemId: 'btnOpsBloqueadasMRP',
-                        text: '🚫 MRP (' + qtdBloqAtual + ')',
+                        text: 'MRP (' + qtdBloqAtual + ')',
                         tooltip: 'Operações com pendência de MRP ocultadas (clique para listar ou restaurar)',
                         cls: 'ag-btn-mrp',
                         hidden: qtdBloqAtual === 0,
@@ -4215,7 +4215,7 @@ function configurarGridConfirmacaoManutencaoDatas(grid) {
 
                 btn = Ext.create('Ext.button.Button', {
                     itemId: 'btnItensDatasAnteriores',
-                    text: '📅 Datas Anteriores (' + qtd + ')',
+                    text: 'Datas Anteriores (' + qtd + ')',
                     tooltip: 'Visualizar e excluir itens com data até o último dia do mês anterior colocados para frente',
                     cls: 'ag-btn-meses-ant' + (qtd > 0 ? ' ag-btn-meses-ant-destaque' : ''),
                     handler: function() {
@@ -4225,7 +4225,7 @@ function configurarGridConfirmacaoManutencaoDatas(grid) {
                 topTb.add(btn);
                 if (topTb.updateLayout) topTb.updateLayout();
             } else {
-                btn.setText('📅 Datas Anteriores (' + qtd + ')');
+                btn.setText('Datas Anteriores (' + qtd + ')');
                 if (qtd > 0) {
                     btn.addCls('ag-btn-meses-ant-destaque');
                 } else {
@@ -4240,7 +4240,7 @@ function configurarGridConfirmacaoManutencaoDatas(grid) {
                 var b = grid.down ? (grid.down('#btnItensDatasAnteriores') || grid.down('#btnItensMesesAnteriores')) : null;
                 if (b) {
                     var it = obterItensDatasAnteriores(grid);
-                    b.setText('📅 Datas Anteriores (' + it.length + ')');
+                    b.setText('Datas Anteriores (' + it.length + ')');
                     if (it.length > 0) {
                         b.addCls('ag-btn-meses-ant-destaque');
                     } else {
@@ -4400,7 +4400,7 @@ function abrirModalItensDatasAnteriores(grid) {
                                 var itRestantes = obterItensDatasAnteriores(grid);
                                 var btnTop = grid.down ? (grid.down('#btnItensDatasAnteriores') || grid.down('#btnItensMesesAnteriores')) : null;
                                 if (btnTop) {
-                                    btnTop.setText('📅 Datas Anteriores (' + itRestantes.length + ')');
+                                    btnTop.setText('Datas Anteriores (' + itRestantes.length + ')');
                                     if (itRestantes.length > 0) {
                                         btnTop.addCls('ag-btn-meses-ant-destaque');
                                     } else {
@@ -4408,7 +4408,7 @@ function abrirModalItensDatasAnteriores(grid) {
                                     }
                                 }
 
-                                mostrarToastNotificacao('✔ <b>' + removidos + '</b> item(ns) removido(s) da alteração com sucesso!');
+                                mostrarToastNotificacao('<b>' + removidos + '</b> item(ns) removido(s) da alteração com sucesso!');
 
                                 if (popupStore.getCount() === 0) {
                                     win.close();
@@ -4460,6 +4460,68 @@ function combinarIdsDosLogs(acumulador, novosIds) {
     return s1 + ',' + s2;
 }
 
+function removerItensSalvosDaManutencao(controller, grid, itensSalvos) {
+    if (!itensSalvos || !itensSalvos.length) return;
+    var store = (grid && grid.getStore) ? grid.getStore() : null;
+
+    // 1. Remove da Store da Grid de Confirmacao visual
+    if (store) {
+        var recordsParaRemover = [];
+        itensSalvos.forEach(function(item) {
+            var d = item.data || item;
+            var idDoc = d.IDDoDocumento;
+            var numItem = d.NumeroDoItem;
+            var numSub = d.NumeroDoSubItem;
+            var idx = store.findBy(function(rec) {
+                var rd = rec.data || rec;
+                return rd.IDDoDocumento == idDoc &&
+                       rd.NumeroDoItem == numItem &&
+                       rd.NumeroDoSubItem == numSub;
+            });
+            if (idx !== -1) {
+                recordsParaRemover.push(store.getAt(idx));
+            }
+        });
+        if (recordsParaRemover.length > 0) {
+            store.remove(recordsParaRemover);
+        }
+    }
+
+    // 2. Remove do array interno do Controller (listaDeItensParaManutencao)
+    if (controller && Array.isArray(controller.listaDeItensParaManutencao)) {
+        var mapaSalvos = {};
+        itensSalvos.forEach(function(item) {
+            var d = item.data || item;
+            var chave = d.IDDoDocumento + '_' + d.NumeroDoItem + '_' + d.NumeroDoSubItem;
+            mapaSalvos[chave] = true;
+        });
+
+        controller.listaDeItensParaManutencao = controller.listaDeItensParaManutencao.filter(function(itCtrl) {
+            var cd = itCtrl.data || itCtrl;
+            var chave = cd.IDDoDocumento + '_' + cd.NumeroDoItem + '_' + cd.NumeroDoSubItem;
+            return !mapaSalvos[chave];
+        });
+    }
+
+    if (grid && grid.getView && typeof grid.getView().refresh === 'function') {
+        grid.getView().refresh();
+    }
+
+    // 3. Atualiza botao de Datas Anteriores se existir
+    if (grid && typeof obterItensDatasAnteriores === 'function') {
+        var itRestantes = obterItensDatasAnteriores(grid);
+        var btnTop = grid.down ? (grid.down('#btnItensDatasAnteriores') || grid.down('#btnItensMesesAnteriores')) : null;
+        if (btnTop) {
+            btnTop.setText('Datas Anteriores (' + itRestantes.length + ')');
+            if (itRestantes.length > 0) {
+                btnTop.addCls('ag-btn-meses-ant-destaque');
+            } else {
+                btnTop.removeCls('ag-btn-meses-ant-destaque');
+            }
+        }
+    }
+}
+
 function criarJanelaProgressoManutencaoDatas(totalItens, totalLotes) {
     var segundosDecorridos = 0;
     var timerInterval = null;
@@ -4467,7 +4529,7 @@ function criarJanelaProgressoManutencaoDatas(totalItens, totalLotes) {
     var lblTitulo = Ext.create('Ext.Component', {
         html: '<div style="font-size: 13px; font-weight: bold; color: #15428b; margin-bottom: 4px;">Atualizando Datas de Previsao</div>' +
               '<div style="font-size: 11px; color: #64748b; margin-bottom: 12px;">' +
-              (totalLotes > 1 ? 'Processando alteracoes em lotes seguros para evitar travamento e timeout do servidor.' : 'Gravando alteracoes com timeout expandido para garantir estabilidade.') +
+              (totalLotes > 1 ? 'Processando alteracoes em lotes com remocao em tempo real e protecao contra perda de dados.' : 'Gravando alteracoes com timeout expandido para garantir estabilidade.') +
               '</div>'
     });
 
@@ -4501,28 +4563,70 @@ function criarJanelaProgressoManutencaoDatas(totalItens, totalLotes) {
         }
     });
 
+    var btnTentarNovamente = Ext.create('Ext.button.Button', {
+        text: 'Tentar Novamente Lote',
+        cls: 'ag-btn-extjs',
+        style: 'margin-right: 6px;',
+        hidden: true,
+        handler: function() {
+            if (win.onTentarNovamente) win.onTentarNovamente();
+        }
+    });
+
+    var btnPularLote = Ext.create('Ext.button.Button', {
+        text: 'Pular Este Lote',
+        cls: 'ag-btn-extjs',
+        style: 'margin-right: 6px;',
+        hidden: true,
+        handler: function() {
+            if (win.onPularLote) win.onPularLote();
+        }
+    });
+
+    var btnPausarManter = Ext.create('Ext.button.Button', {
+        text: 'Manter Restantes na Tela',
+        cls: 'ag-btn-extjs',
+        hidden: true,
+        handler: function() {
+            if (win.onPausarManter) win.onPausarManter();
+        }
+    });
+
     var win = Ext.create('Ext.window.Window', {
         title: 'Manutencao de Datas - ' + (totalLotes > 1 ? 'Processamento em Lote' : 'Gravando'),
-        width: 480,
+        width: 520,
         bodyPadding: '14 18',
         modal: true,
         closable: false,
         resizable: false,
         layout: 'anchor',
         items: [lblTitulo, barraProgresso, lblStatusLote, lblInfoDoc, lblTimer],
-        buttons: [btnCancelar]
+        buttons: [btnTentarNovamente, btnPularLote, btnPausarManter, btnCancelar]
     });
+
+    function iniciarTimer() {
+        if (!timerInterval) {
+            timerInterval = setInterval(function() {
+                segundosDecorridos++;
+                var min = String(Math.floor(segundosDecorridos / 60));
+                if (min.length < 2) min = '0' + min;
+                var seg = String(segundosDecorridos % 60);
+                if (seg.length < 2) seg = '0' + seg;
+                lblTimer.update('<div style="font-size: 10px; color: #94a3b8; text-align: right; margin-top: 6px;">Tempo decorrido: ' + min + ':' + seg + '</div>');
+            }, 1000);
+        }
+    }
+
+    function pararTimer() {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+    }
 
     win.on('show', function() {
         segundosDecorridos = 0;
-        timerInterval = setInterval(function() {
-            segundosDecorridos++;
-            var min = String(Math.floor(segundosDecorridos / 60));
-            if (min.length < 2) min = '0' + min;
-            var seg = String(segundosDecorridos % 60);
-            if (seg.length < 2) seg = '0' + seg;
-            lblTimer.update('<div style="font-size: 10px; color: #94a3b8; text-align: right; margin-top: 6px;">Tempo decorrido: ' + min + ':' + seg + '</div>');
-        }, 1000);
+        iniciarTimer();
     });
 
     win.atualizar = function(loteNum, totLotes, concluidos, totItens, infoItem) {
@@ -4540,23 +4644,40 @@ function criarJanelaProgressoManutencaoDatas(totalItens, totalLotes) {
         }
     };
 
+    win.modoRecuperacao = function(loteNum, totLotes, concluidos, totItens, detalheErro) {
+        pararTimer();
+        btnCancelar.setVisible(false);
+        btnTentarNovamente.setVisible(true);
+        btnPularLote.setVisible(true);
+        btnPausarManter.setVisible(true);
+
+        lblStatusLote.update(
+            '<div style="font-size: 12px; font-weight: bold; color: #dc2626; margin-top: 10px;">Falha ao gravar Lote ' + loteNum + ' de ' + totLotes + '</div>' +
+            '<div style="font-size: 11px; color: #475569; margin-top: 4px;">' + htmlEncodeSeguro(detalheErro || 'O servidor nao respondeu apos tentativas automaticas.') + '</div>' +
+            '<div style="font-size: 11px; color: #15803d; margin-top: 4px; font-weight: 600;">' + concluidos + ' de ' + totItens + ' itens ja foram salvos e removidos da tela com sucesso.</div>'
+        );
+        lblInfoDoc.update('<div style="font-size: 11px; color: #64748b; margin-top: 4px;">Escolha uma acao abaixo para prosseguir com seguranca:</div>');
+    };
+
+    win.retomarProcessamento = function() {
+        btnCancelar.setVisible(true);
+        btnTentarNovamente.setVisible(false);
+        btnPularLote.setVisible(false);
+        btnPausarManter.setVisible(false);
+        iniciarTimer();
+    };
+
     win.concluir = function(callback) {
-        if (timerInterval) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-        }
+        pararTimer();
         barraProgresso.updateProgress(1, '100% - Concluido!');
-        lblStatusLote.update('<div style="font-size: 11px; font-weight: 600; color: #15803d; margin-top: 10px;">&#10004; Todas as alteracoes foram gravadas com sucesso!</div>');
+        lblStatusLote.update('<div style="font-size: 11px; font-weight: 600; color: #15803d; margin-top: 10px;">Todas as alteracoes foram gravadas com sucesso!</div>');
         setTimeout(function() {
             if (typeof callback === 'function') callback();
         }, 150);
     };
 
     win.fechar = function() {
-        if (timerInterval) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-        }
+        pararTimer();
         try {
             win.close();
             win.destroy();
@@ -4586,9 +4707,14 @@ function executarSalvarManutencaoEmLotes(controller, b) {
         return;
     }
 
+    // Grid do Passo 3 (Confirmacao de Itens Selecionados)
+    var gridConfirmacao = (b.formulario && b.formulario.down ? (b.formulario.down('grid') || b.formulario.down('ListViewDeConfirmacaoDeDocumentosParaManutencaoDeDatas') || b.formulario.down('[itemid=listaDeitensConfirmacaoManutencaoDeDatas]')) : null) || obterGridConfirmacaoManutencaoDatas();
+
     // 1. Mapear todos os itens para o formato ProjecaoDeManutencaoDeDatasDeProducao (SEM poluir f.data com campos extras)
     var listaCompleta = [];
     var infoItens = [];
+    var registrosOriginais = [];
+
     Ext.each(itensOriginais, function(g) {
         var f = Ext.create("GMF.model.Projecao.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ProjecaoDeManutencaoDeDatasDeProducao");
         f.data.ID = g.data.ID;
@@ -4603,6 +4729,7 @@ function executarSalvarManutencaoEmLotes(controller, b) {
         f.data.Observacao = g.data.Observacao;
         f.data.EhEntrada = g.data.EhEntrada;
         listaCompleta.push(f.data);
+        registrosOriginais.push(g);
 
         // Metadados amigaveis para a interface mantidos fora do objeto f.data enviado ao servidor
         var doc = g.data.NumeroCompletoDocumento || (g.data.NumeroDoDocumento ? ('Doc ' + g.data.NumeroDoDocumento) : 'OP');
@@ -4627,70 +4754,95 @@ function executarSalvarManutencaoEmLotes(controller, b) {
             perfil: perfil
         };
 
-        Ext.Ajax.request({
-            timeout: 120000,
-            url: "ManutencaoDeDatas/Salvar",
-            method: "POST",
-            params: Ext.encode(payloadDireto),
-            headers: { "Content-Type": "application/json" },
-            scope: controller,
-            success: function(resp) {
-                var dadosResp;
-                try {
-                    dadosResp = Ext.decode(resp.responseText);
-                } catch(e) {
-                    dadosResp = {};
-                }
+        var tentativasDireto = 0;
+        function enviarLoteDireto() {
+            Ext.Ajax.request({
+                timeout: 120000,
+                url: "ManutencaoDeDatas/Salvar",
+                method: "POST",
+                params: Ext.encode(payloadDireto),
+                headers: { "Content-Type": "application/json" },
+                scope: controller,
+                success: function(resp) {
+                    var dadosResp;
+                    try {
+                        dadosResp = Ext.decode(resp.responseText);
+                    } catch(e) {
+                        dadosResp = {};
+                    }
 
-                modalProgressoDireto.concluir(function() {
+                    removerItensSalvosDaManutencao(controller, gridConfirmacao, registrosOriginais);
+
+                    modalProgressoDireto.concluir(function() {
+                        modalProgressoDireto.fechar();
+                        if (Ext.Msg && Ext.Msg.isVisible && Ext.Msg.isVisible()) {
+                            Ext.Msg.hide();
+                        }
+
+                        // Atribui exatamente o idDosLogs retornado (como no ERP nativo)
+                        var logsId = dadosResp ? dadosResp.idDosLogs : null;
+                        if (!logsId || (Array.isArray(logsId) && logsId.length === 0)) {
+                            logsId = '0'; // Protege para que ListarAlteracoes nao faca full scan no banco
+                        }
+                        controller.idsLogAlteracoes = logsId;
+
+                        if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes) {
+                            GMF.servico.Util.Funcoes.customMessageBox("Status", "Alteracoes de data realizadas com sucesso.", Ext.MessageBox.INFO);
+                        } else {
+                            mostrarToastNotificacao("Alteracoes de data realizadas com sucesso.");
+                        }
+
+                        controller.ativarPasso(b, controller.assistente.setarPasso(4));
+
+                        if (b.formulario && b.formulario.up('tabContainer')) {
+                            b.formulario.up('tabContainer').destroy();
+                        }
+                    });
+                },
+                failure: function(resp) {
+                    if (tentativasDireto < 1) {
+                        tentativasDireto++;
+                        setTimeout(enviarLoteDireto, 2000);
+                        return;
+                    }
                     modalProgressoDireto.fechar();
                     if (Ext.Msg && Ext.Msg.isVisible && Ext.Msg.isVisible()) {
                         Ext.Msg.hide();
                     }
-
-                    // Atribui exatamente o idDosLogs retornado (como no ERP nativo)
-                    var logsId = dadosResp ? dadosResp.idDosLogs : null;
-                    if (!logsId || (Array.isArray(logsId) && logsId.length === 0)) {
-                        logsId = '0'; // Protege para que ListarAlteracoes nao faca full scan no banco
+                    var msgErro = "Ocorreu um erro ao salvar as alteracoes no servidor.";
+                    if (resp && resp.timedout) {
+                        msgErro = "O tempo de resposta do servidor expirou ao gravar as alteracoes.";
                     }
-                    controller.idsLogAlteracoes = logsId;
-
                     if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes) {
-                        GMF.servico.Util.Funcoes.customMessageBox("Status", "Alteracoes de data realizadas com sucesso.", Ext.MessageBox.INFO);
+                        window.GMF.servico.Util.Funcoes.customMessageBox("Erro na Gravacao", msgErro, Ext.MessageBox.ERROR);
                     } else {
-                        mostrarToastNotificacao("Alteracoes de data realizadas com sucesso.");
+                        Ext.Msg.alert("Erro", msgErro);
                     }
-
-                    controller.ativarPasso(b, controller.assistente.setarPasso(4));
-
-                    if (b.formulario && b.formulario.up('tabContainer')) {
-                        b.formulario.up('tabContainer').destroy();
-                    }
-                });
-            },
-            failure: function(resp) {
-                modalProgressoDireto.fechar();
-                if (Ext.Msg && Ext.Msg.isVisible && Ext.Msg.isVisible()) {
-                    Ext.Msg.hide();
                 }
-                var msgErro = "Ocorreu um erro ao salvar as alteracoes no servidor.";
-                if (resp && resp.timedout) {
-                    msgErro = "O tempo de resposta do servidor expirou ao gravar as alteracoes.";
-                }
-                if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes) {
-                    window.GMF.servico.Util.Funcoes.customMessageBox("Erro na Gravacao", msgErro, Ext.MessageBox.ERROR);
-                } else {
-                    Ext.Msg.alert("Erro", msgErro);
-                }
-            }
-        });
+            });
+        }
+        enviarLoteDireto();
         return;
     }
 
-    // Para grandes volumes (> 25 itens), executa em LOTES SEGUROS de 20 itens com progresso proporcional
+    // Para grandes volumes (> 25 itens), executa em LOTES SEGUROS de 20 itens com remocao em tempo real e auto-retry
     var TAMANHO_LOTE = 20;
-    var totalLotes = Math.ceil(totalItens / TAMANHO_LOTE);
 
+    // Montar os lotes estruturados com seus itens e registros correspondentes
+    var lotes = [];
+    for (var i = 0; i < totalItens; i += TAMANHO_LOTE) {
+        var fim = Math.min(i + TAMANHO_LOTE, totalItens);
+        lotes.push({
+            indice: lotes.length,
+            inicio: i,
+            fim: fim,
+            itensData: listaCompleta.slice(i, fim),
+            registros: registrosOriginais.slice(i, fim),
+            infoDoc: infoItens[i] || ''
+        });
+    }
+
+    var totalLotes = lotes.length;
     var modalProgresso = criarJanelaProgressoManutencaoDatas(totalItens, totalLotes);
     modalProgresso.show();
 
@@ -4701,31 +4853,67 @@ function executarSalvarManutencaoEmLotes(controller, b) {
 
     var todosIdsLogs = null;
     var itensSalvosComSucesso = 0;
+    var lotesPulados = [];
     var indiceLoteAtual = 0;
+    var tentativasLoteAtual = 0;
+    var MAX_AUTO_RETRIES = 2;
+    var DELAY_ENTRE_LOTES_MS = 350;
 
-    function processarLote() {
-        if (canceladoPeloUsuario) {
+    function finalizarProcessamento() {
+        modalProgresso.concluir(function() {
             modalProgresso.fechar();
-            mostrarToastNotificacao('Processamento interrompido. ' + itensSalvosComSucesso + ' itens foram alterados.');
-            if (itensSalvosComSucesso > 0) {
+            if (Ext.Msg && Ext.Msg.isVisible && Ext.Msg.isVisible()) {
+                Ext.Msg.hide();
+            }
+
+            var itensPendentes = totalItens - itensSalvosComSucesso;
+
+            // Se 100% dos itens foram salvos sem pendencias:
+            if (itensPendentes === 0 && lotesPulados.length === 0) {
                 controller.idsLogAlteracoes = todosIdsLogs || '0';
+
+                if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes) {
+                    var msgSucesso = "Todas as <b>" + totalItens + "</b> alteracoes de datas foram realizadas com sucesso em " + totalLotes + " lotes!";
+                    window.GMF.servico.Util.Funcoes.customMessageBox("Sucesso", msgSucesso, Ext.MessageBox.INFO);
+                } else {
+                    mostrarToastNotificacao("Alteracoes de data concluidas com sucesso!");
+                }
+
                 controller.ativarPasso(b, controller.assistente.setarPasso(4));
+
                 if (b.formulario && b.formulario.up('tabContainer')) {
                     b.formulario.up('tabContainer').destroy();
                 }
+            } else {
+                // Houve lotes pulados ou pendentes: NUNCA fecha a aba para nao perder os itens pendentes
+                var msgAviso = "Processamento concluido com pendencias: <b>" + itensSalvosComSucesso + "</b> de <b>" + totalItens + "</b> itens foram salvos com sucesso e removidos da tela.<br><br><b>" + itensPendentes + "</b> itens permanecem na tela para que voce possa tentar novamente sem perder suas alteracoes.";
+                if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes) {
+                    window.GMF.servico.Util.Funcoes.customMessageBox("Atencao", msgAviso, Ext.MessageBox.WARNING);
+                } else {
+                    Ext.Msg.alert("Atencao", msgAviso);
+                }
             }
+        });
+    }
+
+    function executarLote() {
+        if (canceladoPeloUsuario) {
+            modalProgresso.fechar();
+            var msgCanc = 'Processamento interrompido. ' + itensSalvosComSucesso + ' itens foram salvos com sucesso e removidos da tela. Os itens restantes continuam disponiveis na tela.';
+            mostrarToastNotificacao(msgCanc);
             return;
         }
 
-        var inicio = indiceLoteAtual * TAMANHO_LOTE;
-        var fim = Math.min(inicio + TAMANHO_LOTE, totalItens);
-        var itensDesteLote = listaCompleta.slice(inicio, fim);
-        var infoDoc = infoItens[inicio] || '';
+        if (indiceLoteAtual >= totalLotes) {
+            finalizarProcessamento();
+            return;
+        }
 
-        modalProgresso.atualizar(indiceLoteAtual + 1, totalLotes, itensSalvosComSucesso, totalItens, infoDoc);
+        var lote = lotes[indiceLoteAtual];
+        modalProgresso.atualizar(indiceLoteAtual + 1, totalLotes, itensSalvosComSucesso, totalItens, lote.infoDoc);
 
         var payload = {
-            lista: itensDesteLote,
+            lista: lote.itensData,
             tmv: tmv,
             perfil: perfil
         };
@@ -4749,71 +4937,74 @@ function executarSalvarManutencaoEmLotes(controller, b) {
                     todosIdsLogs = combinarIdsDosLogs(todosIdsLogs, dadosResp.idDosLogs);
                 }
 
-                itensSalvosComSucesso += itensDesteLote.length;
-                indiceLoteAtual++;
+                // SUCESSO DO LOTE:
+                // Remove os itens deste lote do controller e da grid visual em tempo real!
+                removerItensSalvosDaManutencao(controller, gridConfirmacao, lote.registros);
 
-                modalProgresso.atualizar(indiceLoteAtual, totalLotes, itensSalvosComSucesso, totalItens, infoDoc);
+                itensSalvosComSucesso += lote.itensData.length;
+                indiceLoteAtual++;
+                tentativasLoteAtual = 0;
+
+                modalProgresso.atualizar(indiceLoteAtual, totalLotes, itensSalvosComSucesso, totalItens, lote.infoDoc);
 
                 if (indiceLoteAtual < totalLotes) {
-                    setTimeout(processarLote, 50);
+                    setTimeout(executarLote, DELAY_ENTRE_LOTES_MS);
                 } else {
-                    // 100% Concluido com Sucesso!
-                    modalProgresso.concluir(function() {
-                        modalProgresso.fechar();
-                        if (Ext.Msg && Ext.Msg.isVisible && Ext.Msg.isVisible()) {
-                            Ext.Msg.hide();
-                        }
-
-                        controller.idsLogAlteracoes = todosIdsLogs || '0';
-
-                        if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes) {
-                            var msgSucesso = "Todas as <b>" + totalItens + "</b> alteracoes de datas foram realizadas com sucesso em " + totalLotes + " lotes!";
-                            window.GMF.servico.Util.Funcoes.customMessageBox("Sucesso", msgSucesso, Ext.MessageBox.INFO);
-                        } else {
-                            mostrarToastNotificacao("Alteracoes de data concluidas com sucesso!");
-                        }
-
-                        controller.ativarPasso(b, controller.assistente.setarPasso(4));
-
-                        if (b.formulario && b.formulario.up('tabContainer')) {
-                            b.formulario.up('tabContainer').destroy();
-                        }
-                    });
+                    finalizarProcessamento();
                 }
             },
             failure: function(resp) {
-                modalProgresso.fechar();
-                if (Ext.Msg && Ext.Msg.isVisible && Ext.Msg.isVisible()) {
-                    Ext.Msg.hide();
+                // Se ainda restam tentativas automaticas, tenta novamente com backoff de 2.5s
+                if (tentativasLoteAtual < MAX_AUTO_RETRIES) {
+                    tentativasLoteAtual++;
+                    var segEspera = 2.5;
+                    var msgTentativa = "Instabilidade no servidor ao salvar lote " + (indiceLoteAtual + 1) + ". Tentando novamente em " + segEspera + "s (tentativa " + tentativasLoteAtual + " de " + MAX_AUTO_RETRIES + ")...";
+                    modalProgresso.atualizar(indiceLoteAtual + 1, totalLotes, itensSalvosComSucesso, totalItens, msgTentativa);
+                    setTimeout(executarLote, segEspera * 1000);
+                    return;
                 }
 
-                var msgErro = "Ocorreu um erro ao salvar o lote <b>" + (indiceLoteAtual + 1) + "</b> no servidor.";
-                if (resp && resp.timedout) {
-                    msgErro = "O tempo de resposta expirou ao salvar o lote <b>" + (indiceLoteAtual + 1) + "</b>.";
-                }
+                // Esgotou tentativas automaticas: entra em modo de recuperacao com opcoes sem perda de dados
+                var loteFalho = lotes[indiceLoteAtual];
+                var detalheErro = (resp && resp.timedout) ? "Tempo de conexao com o servidor expirou." : "O servidor retornou codigo de erro ou rejeitou a gravacao.";
 
-                if (itensSalvosComSucesso > 0) {
-                    msgErro += "<br><br><b>" + itensSalvosComSucesso + "</b> de <b>" + totalItens + "</b> itens ja foram salvos com sucesso antes desta falha.";
-                }
+                modalProgresso.modoRecuperacao(
+                    indiceLoteAtual + 1,
+                    totalLotes,
+                    itensSalvosComSucesso,
+                    totalItens,
+                    detalheErro
+                );
 
-                if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes) {
-                    window.GMF.servico.Util.Funcoes.customMessageBox("Erro na Gravacao", msgErro, Ext.MessageBox.ERROR);
-                } else {
-                    Ext.Msg.alert("Erro", msgErro);
-                }
+                modalProgresso.onTentarNovamente = function() {
+                    tentativasLoteAtual = 0;
+                    modalProgresso.retomarProcessamento();
+                    executarLote();
+                };
 
-                if (itensSalvosComSucesso > 0) {
-                    controller.idsLogAlteracoes = todosIdsLogs || '0';
-                    controller.ativarPasso(b, controller.assistente.setarPasso(4));
-                    if (b.formulario && b.formulario.up('tabContainer')) {
-                        b.formulario.up('tabContainer').destroy();
+                modalProgresso.onPularLote = function() {
+                    lotesPulados.push(loteFalho);
+                    indiceLoteAtual++;
+                    tentativasLoteAtual = 0;
+                    modalProgresso.retomarProcessamento();
+                    executarLote();
+                };
+
+                modalProgresso.onPausarManter = function() {
+                    modalProgresso.fechar();
+                    var pendentes = totalItens - itensSalvosComSucesso;
+                    var msgPausa = "Processamento pausado. <b>" + itensSalvosComSucesso + "</b> itens foram salvos com sucesso e removidos da tela.<br><br>Os <b>" + pendentes + "</b> itens restantes continuam na tela para que voce nao perca suas alteracoes. Voce pode clicar em 'Concluir' novamente quando o servidor estabilizar.";
+                    if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes) {
+                        window.GMF.servico.Util.Funcoes.customMessageBox("Pausado com Seguranca", msgPausa, Ext.MessageBox.INFO);
+                    } else {
+                        Ext.Msg.alert("Pausado com Seguranca", msgPausa);
                     }
-                }
+                };
             }
         });
     }
 
-    processarLote();
+    executarLote();
 }
 
 
@@ -5594,7 +5785,7 @@ const extJsInitializationMonitor = setInterval(() => {
                     if (comp.update) {
                         comp.update(
                             '<span class="ag-progresso-concluido">' +
-                            '✔ <b>' + totalSemDep.toLocaleString('pt-BR') + '</b> OPs prontas (' + totalBanco.toLocaleString('pt-BR') + ' no banco)' +
+                            '<b>' + totalSemDep.toLocaleString('pt-BR') + '</b> OPs prontas (' + totalBanco.toLocaleString('pt-BR') + ' no banco)' +
                             '</span>'
                         );
                     }
@@ -5769,7 +5960,7 @@ const extJsInitializationMonitor = setInterval(() => {
             }
 
             atualizarBadgeProgresso(window.__ERP_CACHE_LIBERACAO.totalBanco, window.__ERP_CACHE_LIBERACAO.totalBanco, totalReal, true);
-            mostrarToastNotificacao('✔ <b>' + totalReal.toLocaleString('pt-BR') + '</b> OPs sem dependência carregadas de toda a busca (' + window.__ERP_CACHE_LIBERACAO.totalBanco.toLocaleString('pt-BR') + ' no banco)!');
+            mostrarToastNotificacao('<b>' + totalReal.toLocaleString('pt-BR') + '</b> OPs sem dependência carregadas de toda a busca (' + window.__ERP_CACHE_LIBERACAO.totalBanco.toLocaleString('pt-BR') + ' no banco)!');
             console.info('[ERP Optimizer] Carga integral concluída: ' + totalReal + ' OPs sem dependência disponíveis.');
         }
 
@@ -6053,7 +6244,7 @@ const extJsInitializationMonitor = setInterval(() => {
                                         carregarRestanteChunksLiberacao(options, totalOriginalBruto, meuIdBusca);
                                     }, 40);
                                 } else {
-                                    mostrarToastNotificacao('✔ <b>' + registrosProcessados.length + '</b> OPs sem dependência encontradas!');
+                                    mostrarToastNotificacao('<b>' + registrosProcessados.length + '</b> OPs sem dependência encontradas!');
                                 }
                             } else {
                                 window.__ERP_CACHE_LIBERACAO = null;
