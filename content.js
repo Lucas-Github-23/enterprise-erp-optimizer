@@ -1586,6 +1586,410 @@ function registroCorrespondeDocOuAux(reg, termo) {
     return false;
 }
 
+
+// --------------------------------------------------------------------------
+// 6.3.1 Importacao e Selecao em Massa de Itens via CSV / Lista (Manutencao de Datas)
+// --------------------------------------------------------------------------
+
+function converterDataBr(str) {
+    if (!str) return null;
+    if (str instanceof Date) return str;
+    var partes = String(str).trim().split(/[\/\-]/);
+    if (partes.length === 3) {
+        var dia = parseInt(partes[0], 10);
+        var mes = parseInt(partes[1], 10) - 1;
+        var ano = parseInt(partes[2], 10);
+        if (ano < 100) ano += 2000;
+        return new Date(ano, mes, dia);
+    }
+    return new Date();
+}
+
+function parsearCsvManutencaoDatas(texto) {
+    if (!texto || typeof texto !== 'string') return [];
+    var linhas = texto.split(/\r?\n/);
+    var itens = [];
+    var ehCabecalho = true;
+
+    for (var i = 0; i < linhas.length; i++) {
+        var linha = linhas[i].trim();
+        if (!linha) continue;
+
+        // Detecta separador (; ou , ou tab)
+        var sep = ';';
+        if (linha.indexOf('\t') !== -1) sep = '\t';
+        else if (linha.indexOf(';') !== -1) sep = ';';
+        else if (linha.indexOf(',') !== -1) sep = ',';
+
+        var colunas = linha.split(sep).map(function(c) {
+            return c.trim().replace(/^["']|["']$/g, '');
+        });
+
+        // Ignora cabecalho comum (se primeira linha contiver palavras-chave)
+        var linhaLower = linha.toLowerCase();
+        if (ehCabecalho && (linhaLower.indexOf('doc') !== -1 || linhaLower.indexOf('op') !== -1 || linhaLower.indexOf('item') !== -1)) {
+            ehCabecalho = false;
+            continue;
+        }
+        ehCabecalho = false;
+
+        var col0 = colunas[0] || '';
+        if (!col0) continue;
+
+        var doc = col0;
+        var numItem = colunas[1] || '';
+        var codAux = '';
+        var novaData = '';
+
+        // Se coluna 2 ou 3 for data (formato DD/MM/AAAA)
+        if (colunas[2] && /^\d{1,2}\/\d{1,2}\/\d{4}/.test(colunas[2])) {
+            novaData = colunas[2];
+        } else if (colunas[3] && /^\d{1,2}\/\d{1,2}\/\d{4}/.test(colunas[3])) {
+            codAux = colunas[2] || '';
+            novaData = colunas[3];
+        } else {
+            codAux = colunas[2] || '';
+            if (colunas[3] && /^\d{1,2}\/\d{1,2}\/\d{4}/.test(colunas[3])) {
+                novaData = colunas[3];
+            } else if (colunas[4] && /^\d{1,2}\/\d{1,2}\/\d{4}/.test(colunas[4])) {
+                novaData = colunas[4];
+            }
+        }
+
+        // Se numItem parecer data, ajusta
+        if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(numItem)) {
+            novaData = numItem;
+            numItem = '';
+        }
+
+        itens.push({
+            documento: doc,
+            item: numItem,
+            codigoAuxiliar: codAux,
+            novaData: novaData
+        });
+    }
+
+    return itens;
+}
+
+function itemCorrespondeAoRegistro(itemCsv, reg) {
+    if (!itemCsv || !reg) return false;
+    var docCsv = String(itemCsv.documento || '').trim().toUpperCase();
+    var itemNumCsv = String(itemCsv.item || '').trim();
+    var codAuxCsv = String(itemCsv.codigoAuxiliar || '').trim().toUpperCase();
+
+    var regData = reg.data || reg;
+    var regDocNum = String(regData.NumeroDoDocumento !== undefined && regData.NumeroDoDocumento !== null ? regData.NumeroDoDocumento : '').trim().toUpperCase();
+    var regDocCompleto = String(regData.NumeroCompletoDocumento !== undefined && regData.NumeroCompletoDocumento !== null ? regData.NumeroCompletoDocumento : '').trim().toUpperCase();
+    var regCodAux = String(regData.CodigoDeDocumentoAuxiliar !== undefined && regData.CodigoDeDocumentoAuxiliar !== null ? regData.CodigoDeDocumentoAuxiliar : '').trim().toUpperCase();
+    var regItem = String(regData.NumeroDoItem !== undefined && regData.NumeroDoItem !== null ? regData.NumeroDoItem : '').trim();
+    var regItemESubitem = String(regData.NumeroItemESubitem !== undefined && regData.NumeroItemESubitem !== null ? regData.NumeroItemESubitem : '').trim();
+
+    // 1. Validar documento / OP / codigo auxiliar
+    var bateuDoc = false;
+    if (docCsv) {
+        var matchNumCsv = docCsv.match(/(?:-|\s|^)(\d+)$/);
+        var puroNumCsv = matchNumCsv ? matchNumCsv[1] : docCsv;
+
+        if (regDocNum && (regDocNum === puroNumCsv || regDocNum === docCsv)) {
+            bateuDoc = true;
+        } else if (regDocCompleto && (regDocCompleto.indexOf(docCsv) !== -1 || (puroNumCsv && regDocCompleto.indexOf(puroNumCsv) !== -1))) {
+            bateuDoc = true;
+        } else if (regCodAux && (regCodAux === docCsv || (codAuxCsv && regCodAux === codAuxCsv))) {
+            bateuDoc = true;
+        }
+    } else if (codAuxCsv && regCodAux && regCodAux === codAuxCsv) {
+        bateuDoc = true;
+    }
+
+    if (!bateuDoc) return false;
+
+    // 2. Validar item (se informado no CSV)
+    if (itemNumCsv) {
+        var itemNumFloat = parseFloat(itemNumCsv);
+        var regItemFloat = parseFloat(regItemESubitem || regItem);
+        if (!isNaN(itemNumFloat) && !isNaN(regItemFloat)) {
+            if (itemNumFloat === regItemFloat) return true;
+        }
+        if (regItem === itemNumCsv || regItemESubitem === itemNumCsv) return true;
+        return false;
+    }
+
+    // Se nao especificou item no CSV, bate com todos os itens do documento
+    return true;
+}
+
+function avancarParaPasso3Manutencao(ctrl, grid) {
+    if (!ctrl) ctrl = obterControllerManutencao(grid);
+    if (!ctrl) return;
+
+    var p = grid.up('EditViewDeSelecaoDeDocumentoParaManutencaoDeDatas') || grid.up('formularioPadrao') || grid.up('panel');
+    var cfg = (p && p.config) ? p.config : null;
+
+    if (ctrl.assistente && typeof ctrl.ativarPasso === 'function' && cfg) {
+        ctrl.ativarPasso(cfg, ctrl.assistente.setarPasso(3));
+    } else {
+        var botoes = Ext.ComponentQuery.query('button') || [];
+        for (var i = 0; i < botoes.length; i++) {
+            var b = botoes[i];
+            var txt = (b.text || '').toLowerCase().trim();
+            if ((txt.indexOf('próximo') !== -1 || txt.indexOf('proximo') !== -1) && !b.isDisabled()) {
+                if (typeof b.handler === 'function') {
+                    b.handler.call(b.scope || b, b);
+                } else {
+                    b.fireEvent('click', b);
+                }
+                break;
+            }
+        }
+    }
+}
+
+function abrirModalImportacaoCsvManutencaoDatas(grid) {
+    if (!grid || grid.isDestroyed) return;
+    var ctrl = obterControllerManutencao(grid);
+
+    var txtCsv = Ext.create('Ext.form.field.TextArea', {
+        itemId: 'txtConteudoCsv',
+        fieldLabel: 'Conteudo CSV ou Lista de OPs',
+        labelAlign: 'top',
+        emptyText: 'Cole aqui os dados do CSV exportado pelo painel ou uma lista simples de OPs.\n\nExemplos aceitos:\n2013;5.0;30/10/2026\n20489;1.0;30/10/2026\n\nOu apenas OPs (uma por linha):\n2013\n20489\n21372',
+        height: 180,
+        width: '100%',
+        cls: 'ag-textarea-csv'
+    });
+
+    var dtInicio = Ext.create('Ext.form.field.Date', {
+        itemId: 'dtPrevisaoInicioCsv',
+        fieldLabel: 'Nova Previsao Inicio',
+        format: 'd/m/Y',
+        submitFormat: 'Y-m-d',
+        value: new Date(),
+        width: 250,
+        labelWidth: 130
+    });
+
+    var dtFim = Ext.create('Ext.form.field.Date', {
+        itemId: 'dtPrevisaoFimCsv',
+        fieldLabel: 'Nova Previsao Termino',
+        format: 'd/m/Y',
+        submitFormat: 'Y-m-d',
+        value: new Date(),
+        width: 250,
+        labelWidth: 130
+    });
+
+    dtInicio.on('change', function(cmp, newVal) {
+        if (newVal) dtFim.setValue(newVal);
+    });
+
+    var txtMotivo = Ext.create('Ext.form.field.Text', {
+        itemId: 'txtMotivoCsv',
+        fieldLabel: 'Codigo do Motivo',
+        value: 'P4',
+        width: 250,
+        labelWidth: 130
+    });
+
+    var txtObs = Ext.create('Ext.form.field.Text', {
+        itemId: 'txtObsCsv',
+        fieldLabel: 'Observacao',
+        value: 'Adiantamento de producao - itens prontos',
+        width: '100%',
+        labelWidth: 130
+    });
+
+    var lblStatus = Ext.create('Ext.Component', {
+        itemId: 'lblStatusCsv',
+        html: '<div style="font-size: 11px; color: #64748b; margin-top: 6px;">Pronto para processar lista ou arquivo CSV.</div>'
+    });
+
+    var btnCarregarArquivo = Ext.create('Ext.button.Button', {
+        text: 'Carregar Arquivo CSV (.csv / .txt)',
+        cls: 'ag-btn-extjs',
+        handler: function() {
+            var fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = '.csv,.txt';
+            fileInput.style.display = 'none';
+            document.body.appendChild(fileInput);
+
+            fileInput.onchange = function(e) {
+                var file = e.target.files && e.target.files[0];
+                if (!file) return;
+                var reader = new FileReader();
+                reader.onload = function(evt) {
+                    var conteudo = evt.target.result;
+                    txtCsv.setValue(conteudo);
+                    var itensLidos = parsearCsvManutencaoDatas(conteudo);
+                    lblStatus.update('<div style="font-size: 11px; color: #15803d; font-weight: bold; margin-top: 6px;">Arquivo carregado com sucesso: ' + itensLidos.length + ' item(ns) identificado(s).</div>');
+                };
+                reader.readAsText(file, 'UTF-8');
+                document.body.removeChild(fileInput);
+            };
+
+            fileInput.click();
+        }
+    });
+
+    var win = Ext.create('Ext.window.Window', {
+        title: 'Manutencao de Datas - Importacao de Itens (via CSV / Lista)',
+        width: 580,
+        bodyPadding: '14 18',
+        modal: true,
+        resizable: true,
+        items: [
+            {
+                xtype: 'component',
+                html: '<div style="font-size: 13px; font-weight: bold; color: #15428b; margin-bottom: 4px;">Selecao em Massa de Itens para Adiantamento</div>' +
+                      '<div style="font-size: 11px; color: #64748b; margin-bottom: 12px;">Cole a lista exportada do painel ou carregue o arquivo CSV. O sistema localizara os itens e aplicara as novas datas com motivo P4.</div>'
+            },
+            btnCarregarArquivo,
+            { xtype: 'component', html: '<div style="margin-top: 8px;"></div>' },
+            txtCsv,
+            {
+                xtype: 'container',
+                layout: 'hbox',
+                margin: '8 0 4 0',
+                items: [dtInicio, { xtype: 'component', width: 20 }, dtFim]
+            },
+            {
+                xtype: 'container',
+                layout: 'hbox',
+                margin: '4 0 4 0',
+                items: [txtMotivo]
+            },
+            txtObs,
+            lblStatus
+        ],
+        buttons: [
+            {
+                text: 'Selecionar na Grade Atual',
+                tooltip: 'Marca os checkboxes dos itens encontrados na pagina atual da grade',
+                cls: 'ag-btn-extjs',
+                handler: function() {
+                    var texto = txtCsv.getValue();
+                    var itens = parsearCsvManutencaoDatas(texto);
+                    if (!itens.length) {
+                        lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Nenhum item valido encontrado no texto/CSV.</div>');
+                        return;
+                    }
+
+                    var store = grid.getStore();
+                    if (!store) return;
+
+                    var selecionados = [];
+                    var encontrados = 0;
+
+                    store.each(function(rec) {
+                        for (var i = 0; i < itens.length; i++) {
+                            if (itemCorrespondeAoRegistro(itens[i], rec)) {
+                                selecionados.push(rec);
+                                encontrados++;
+                                break;
+                            }
+                        }
+                    });
+
+                    if (selecionados.length > 0) {
+                        grid.getSelectionModel().select(selecionados, false);
+                        lblStatus.update('<div style="font-size: 11px; color: #15803d; font-weight: bold;">' + encontrados + ' item(ns) selecionado(s) na grade atual com sucesso!</div>');
+                        mostrarToastNotificacao(encontrados + ' item(ns) selecionado(s) na grade!');
+                    } else {
+                        lblStatus.update('<div style="font-size: 11px; color: #b45309; font-weight: bold;">Nenhum dos ' + itens.length + ' itens do CSV foi encontrado na pagina atual da grade (verifique se estao em outras paginas ou se o filtro de busca no Passo 1 abrange os itens).</div>');
+                    }
+                }
+            },
+            {
+                text: 'Aplicar Datas e Avancar para Passo 3',
+                tooltip: 'Aplica as novas datas nos itens correspondentes e avanca diretamente para a Confirmacao (Passo 3)',
+                cls: 'ag-btn-extjs ag-btn-destaque-csv',
+                handler: function() {
+                    var texto = txtCsv.getValue();
+                    var itens = parsearCsvManutencaoDatas(texto);
+                    if (!itens.length) {
+                        lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Nenhum item valido encontrado no texto/CSV.</div>');
+                        return;
+                    }
+
+                    var dtIniVal = dtInicio.getValue();
+                    var dtFimVal = dtFim.getValue();
+                    var motivoVal = txtMotivo.getValue() || 'P4';
+                    var obsVal = txtObs.getValue() || '';
+
+                    if (!dtIniVal) {
+                        lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Informe a Nova Previsao Inicio.</div>');
+                        return;
+                    }
+
+                    ctrl = ctrl || obterControllerManutencao(grid);
+                    if (!ctrl) {
+                        lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Controller de Manutencao de Datas nao localizado.</div>');
+                        return;
+                    }
+
+                    if (!Array.isArray(ctrl.listaDeItensParaManutencao)) {
+                        ctrl.listaDeItensParaManutencao = [];
+                    }
+
+                    var store = grid.getStore();
+                    var adicionados = 0;
+
+                    itens.forEach(function(itemCsv) {
+                        if (store) {
+                            store.each(function(rec) {
+                                if (itemCorrespondeAoRegistro(itemCsv, rec)) {
+                                    var dataIniFinal = itemCsv.novaData ? converterDataBr(itemCsv.novaData) : dtIniVal;
+                                    var dataFimFinal = itemCsv.novaData ? converterDataBr(itemCsv.novaData) : (dtFimVal || dtIniVal);
+
+                                    rec.data.DataPrevisaoInicioAtual = dataIniFinal;
+                                    rec.data.DataPrevisaoFinalAtual = dataFimFinal;
+                                    rec.data.CodigoDoMotivo = motivoVal;
+                                    rec.data.Observacao = obsVal;
+
+                                    var jaExiste = false;
+                                    for (var k = 0; k < ctrl.listaDeItensParaManutencao.length; k++) {
+                                        var itC = ctrl.listaDeItensParaManutencao[k];
+                                        var cd = itC.data || itC;
+                                        if (cd.IDDoDocumento == rec.data.IDDoDocumento && cd.NumeroDoItem == rec.data.NumeroDoItem && cd.NumeroDoSubItem == rec.data.NumeroDoSubItem) {
+                                            ctrl.listaDeItensParaManutencao[k] = rec;
+                                            jaExiste = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!jaExiste) {
+                                        ctrl.listaDeItensParaManutencao.push(rec);
+                                        adicionados++;
+                                    }
+                                }
+                            });
+                        }
+                    });
+
+                    if (ctrl.listaDeItensParaManutencao.length > 0) {
+                        win.close();
+                        avancarParaPasso3Manutencao(ctrl, grid);
+                        mostrarToastNotificacao(ctrl.listaDeItensParaManutencao.length + ' item(ns) preparados para confirmacao no Passo 3!');
+                    } else {
+                        lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Nenhum item correspondente foi localizado na grade atual para aplicacao.</div>');
+                    }
+                }
+            },
+            {
+                text: 'Fechar',
+                cls: 'ag-btn-extjs',
+                handler: function() {
+                    win.close();
+                }
+            }
+        ]
+    });
+
+    win.show();
+}
+
+
 function configurarGridSelecaoManutencaoDatas(grid) {
     if (!grid || grid.isDestroyed || !isGridSelecaoManutencaoDatas(grid)) return;
 
@@ -1637,13 +2041,55 @@ function configurarGridSelecaoManutencaoDatas(grid) {
                     }
                 });
 
-                topTb.add(chk);
+                                topTb.add(chk);
+
+                if (!topTb.down('#sepImportarCsvTop')) {
+                    topTb.add({
+                        xtype: 'tbseparator',
+                        itemId: 'sepImportarCsvTop'
+                    });
+                }
+
+                var btnImportarCsv = topTb.down ? topTb.down('#btnImportarCsvManutencao') : null;
+                if (!btnImportarCsv) {
+                    btnImportarCsv = Ext.create('Ext.button.Button', {
+                        itemId: 'btnImportarCsvManutencao',
+                        text: 'Importar Lista / CSV',
+                        tooltip: 'Importar arquivo CSV ou colar lista de OPs e Itens para alteracao de datas em massa',
+                        cls: 'ag-btn-extjs ag-btn-destaque-csv',
+                        handler: function() {
+                            abrirModalImportacaoCsvManutencaoDatas(grid);
+                        }
+                    });
+                    topTb.add(btnImportarCsv);
+                }
                 if (topTb.updateLayout) topTb.updateLayout();
             } else {
                 if (chk.getValue() !== isDocAuxAtivo) {
                     chk.suspendEvents(false);
                     chk.setValue(isDocAuxAtivo);
                     chk.resumeEvents();
+                }
+
+                var btnExistente = topTb.down ? topTb.down('#btnImportarCsvManutencao') : null;
+                if (!btnExistente) {
+                    if (!topTb.down('#sepImportarCsvTop')) {
+                        topTb.add({
+                            xtype: 'tbseparator',
+                            itemId: 'sepImportarCsvTop'
+                        });
+                    }
+                    var btnNovo = Ext.create('Ext.button.Button', {
+                        itemId: 'btnImportarCsvManutencao',
+                        text: 'Importar Lista / CSV',
+                        tooltip: 'Importar arquivo CSV ou colar lista de OPs e Itens para alteracao de datas em massa',
+                        cls: 'ag-btn-extjs ag-btn-destaque-csv',
+                        handler: function() {
+                            abrirModalImportacaoCsvManutencaoDatas(grid);
+                        }
+                    });
+                    topTb.add(btnNovo);
+                    if (topTb.updateLayout) topTb.updateLayout();
                 }
             }
         }
@@ -2015,6 +2461,19 @@ function injetarEstilosPersonalizados() {
             box-shadow: inset 0 1px 0 #ffffff, 0 1px 1px rgba(0,0,0,0.06) !important;
             cursor: pointer !important;
             padding: 2px 10px !important;
+        }
+        .ag-btn-destaque-csv {
+            background: #f0fdf4 linear-gradient(to bottom, #ffffff 0%, #dcfce7 100%) !important;
+            border-color: #86efac !important;
+        }
+        .ag-btn-destaque-csv .x-btn-inner {
+            color: #166534 !important;
+            font-weight: bold !important;
+        }
+        .ag-textarea-csv textarea {
+            font-family: Consolas, monospace, sans-serif !important;
+            font-size: 11px !important;
+            line-height: 1.4 !important;
         }
         .ag-btn-extjs .x-btn-inner {
             color: #15428b !important;
