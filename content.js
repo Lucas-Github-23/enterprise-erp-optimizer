@@ -1740,29 +1740,43 @@ function adicionarItemSeNaoExistir(lista, modelReg) {
 }
 
 function avancarParaPasso3Manutencao(ctrl, grid) {
-    if (!ctrl) ctrl = obterControllerManutencao(grid);
-    if (!ctrl) return;
+    if (!ctrl) ctrl = (grid && grid._controllerManutencao) || obterControllerManutencao(grid);
 
-    var p = grid.up('EditViewDeSelecaoDeDocumentoParaManutencaoDeDatas') || grid.up('formularioPadrao') || grid.up('panel');
-    var cfg = (p && p.config) ? p.config : null;
-
-    if (cfg && typeof ctrl.acaoProximo === 'function') {
-        ctrl.acaoProximo(cfg);
-    } else if (ctrl.assistente && typeof ctrl.ativarPasso === 'function' && cfg) {
-        ctrl.ativarPasso(cfg, ctrl.assistente.setarPasso(3));
-    } else {
-        var botoes = Ext.ComponentQuery.query('button') || [];
-        for (var i = 0; i < botoes.length; i++) {
-            var b = botoes[i];
-            var txt = (b.text || '').toLowerCase().trim();
-            if ((txt === 'próximo' || txt === 'proximo' || txt.indexOf('próximo') !== -1 || txt.indexOf('proximo') !== -1) && !b.isDisabled()) {
+    // 1. Tenta acionar clicando no botao "Proximo" da barra de ferramentas superior do assistente
+    var botoes = Ext.ComponentQuery.query('button') || [];
+    var clicou = false;
+    for (var i = 0; i < botoes.length; i++) {
+        var b = botoes[i];
+        var txt = (b.text || '').toLowerCase().trim();
+        if ((txt === 'próximo' || txt === 'proximo' || txt.indexOf('próximo') !== -1 || txt.indexOf('proximo') !== -1) && !b.isDisabled()) {
+            try {
                 if (typeof b.handler === 'function') {
                     b.handler.call(b.scope || b, b);
                 } else {
                     b.fireEvent('click', b);
                 }
+                clicou = true;
                 break;
-            }
+            } catch(e) {}
+        }
+    }
+    if (clicou) return;
+
+    // 2. Se nao achou o botao na barra, tenta via controller
+    if (grid) {
+        var p = grid.up('EditViewDeSelecaoDeDocumentoParaManutencaoDeDatas') || grid.up('formularioPadrao') || grid.up('panel');
+        var cfg = (p && p.config) ? p.config : null;
+        if (ctrl && cfg && typeof ctrl.acaoProximo === 'function') {
+            try {
+                ctrl.acaoProximo(cfg);
+                return;
+            } catch(e) {}
+        }
+        if (ctrl && ctrl.assistente && typeof ctrl.ativarPasso === 'function' && cfg) {
+            try {
+                ctrl.ativarPasso(cfg, ctrl.assistente.setarPasso(3));
+                return;
+            } catch(e) {}
         }
     }
 }
@@ -2051,11 +2065,21 @@ function abrirModalImportacaoCsvManutencaoDatas(grid) {
                 return;
             }
 
-            ctrl = ctrl || obterControllerManutencao(grid);
+            ctrl = ctrl || (grid && grid._controllerManutencao) || obterControllerManutencao(grid);
             if (!ctrl) {
-                lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Controller de Manutencao de Datas nao localizado.</div>');
+                // Tenta instanciacao direta
+                try {
+                    ctrl = Ext.create('GMF.controller.dominio.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ControllerDeManutencaoDeDatas');
+                    if (ctrl && typeof ctrl.init === 'function') ctrl.init();
+                    window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = ctrl;
+                } catch(e) {}
+            }
+
+            if (!ctrl) {
+                lblStatus.update('<div style="font-size: 11px; color: #dc2626; font-weight: bold;">Nao foi possivel carregar o modulo de Manutencao de Datas. Tente recarregar a pagina.</div>');
                 return;
             }
+            if (grid) grid._controllerManutencao = ctrl;
 
             buscarItensNoServidorEAvancar(ctrl, grid, itens, dtIniVal, dtFimVal, motivoVal, obsVal, win, progressBar, lblStatus, btnBuscarEAvancar);
         }
@@ -4755,19 +4779,125 @@ function obterItensDatasAnteriores(grid) {
 }
 var obterItensMesesAnteriores = obterItensDatasAnteriores;
 
+var __ULTIMO_CONTROLLER_MANUTENCAO_DATAS = null;
+
 function obterControllerManutencao(grid) {
     if (grid && grid._controllerManutencao) return grid._controllerManutencao;
+    if (window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS) return window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS;
+
+    // 1. Procura na arvore hierarquica do grid
     if (grid) {
-        var p = grid.up('EditViewDeConfirmacaoDeAlteracoesParaManutencaoDeDatas') || grid.up('formularioPadrao') || grid.up('panel');
-        if (p && p.config && p.config.contexto) {
-            grid._controllerManutencao = p.config.contexto;
-            return p.config.contexto;
+        var views = [
+            grid.up('EditViewDeSelecaoDeDocumentoParaManutencaoDeDatas'),
+            grid.up('EditViewDeConfirmacaoDeAlteracoesParaManutencaoDeDatas'),
+            grid.up('EditViewDeParametrosManutencaoDeDatas'),
+            grid.up('formularioPadrao'),
+            grid.up('[identificador=selecaoDeDocumentosParaManutencaoDeDatas]'),
+            grid.up('[identificador=confirmacaoDeDocumentosParaManutencaoDeDatas]'),
+            grid.up('panel')
+        ];
+        for (var i = 0; i < views.length; i++) {
+            var v = views[i];
+            if (v) {
+                if (v.config && v.config.contexto) {
+                    grid._controllerManutencao = v.config.contexto;
+                    window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = v.config.contexto;
+                    return v.config.contexto;
+                }
+                if (v.contexto) {
+                    grid._controllerManutencao = v.contexto;
+                    window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = v.contexto;
+                    return v.contexto;
+                }
+            }
         }
     }
-    if (window.GMF && window.GMF.app && window.GMF.app.controllers) {
-        var c = window.GMF.app.controllers.get('dominio.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ControllerDeManutencaoDeDatas');
-        if (c) return c;
+
+    // 2. Procura em todos os componentes de formulario abertos na aplicacao
+    if (window.Ext && window.Ext.ComponentQuery) {
+        var forms = window.Ext.ComponentQuery.query('EditViewDeSelecaoDeDocumentoParaManutencaoDeDatas') || [];
+        for (var f = 0; f < forms.length; f++) {
+            var cf = forms[f];
+            if (cf && cf.config && cf.config.contexto) {
+                window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = cf.config.contexto;
+                return cf.config.contexto;
+            }
+            if (cf && cf.contexto) {
+                window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = cf.contexto;
+                return cf.contexto;
+            }
+        }
+
+        var formsConf = window.Ext.ComponentQuery.query('EditViewDeConfirmacaoDeAlteracoesParaManutencaoDeDatas') || [];
+        for (var fc = 0; fc < formsConf.length; fc++) {
+            var cfc = formsConf[fc];
+            if (cfc && cfc.config && cfc.config.contexto) {
+                window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = cfc.config.contexto;
+                return cfc.config.contexto;
+            }
+            if (cfc && cfc.contexto) {
+                window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = cfc.contexto;
+                return cfc.contexto;
+            }
+        }
     }
+
+    // 3. Procura no registro de controllers do GMF.app
+    if (window.GMF && window.GMF.app) {
+        if (typeof window.GMF.app.getController === 'function') {
+            try {
+                var c1 = window.GMF.app.getController('dominio.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ControllerDeManutencaoDeDatas');
+                if (c1) {
+                    window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = c1;
+                    return c1;
+                }
+            } catch(e) {}
+            try {
+                var c2 = window.GMF.app.getController('GMF.controller.dominio.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ControllerDeManutencaoDeDatas');
+                if (c2) {
+                    window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = c2;
+                    return c2;
+                }
+            } catch(e) {}
+        }
+        if (window.GMF.app.controllers) {
+            var col = window.GMF.app.controllers;
+            if (col.items && Array.isArray(col.items)) {
+                for (var j = 0; j < col.items.length; j++) {
+                    var item = col.items[j];
+                    if (item && item.$className && item.$className.indexOf('ControllerDeManutencaoDeDatas') !== -1) {
+                        window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = item;
+                        return item;
+                    }
+                }
+            }
+            if (typeof col.get === 'function') {
+                var c3 = col.get('dominio.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ControllerDeManutencaoDeDatas') ||
+                         col.get('GMF.controller.dominio.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ControllerDeManutencaoDeDatas');
+                if (c3) {
+                    window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = c3;
+                    return c3;
+                }
+            }
+        }
+    }
+
+    // 4. Instanciacao dinamica como fallback seguro
+    if (window.Ext && window.GMF && window.GMF.controller && window.GMF.controller.dominio &&
+        window.GMF.controller.dominio.MovimentacaoDeEntradaESaida &&
+        window.GMF.controller.dominio.MovimentacaoDeEntradaESaida.ManutencaoDeDatas &&
+        window.GMF.controller.dominio.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ControllerDeManutencaoDeDatas) {
+        try {
+            var novoCtrl = Ext.create('GMF.controller.dominio.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ControllerDeManutencaoDeDatas');
+            if (novoCtrl) {
+                if (typeof novoCtrl.init === 'function') novoCtrl.init();
+                novoCtrl.listaDeItensParaManutencao = novoCtrl.listaDeItensParaManutencao || [];
+                window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = novoCtrl;
+                return novoCtrl;
+            }
+        } catch(e) {}
+    }
+
     return null;
 }
 
@@ -5606,6 +5736,7 @@ function hookControllerManutencaoDeDatas() {
 
         if (proto.acaoSalvar && !proto.acaoSalvar._agHooked) {
             proto.acaoSalvar = function(b) {
+                window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = this;
                 return executarSalvarManutencaoEmLotes(this, b);
             };
             proto.acaoSalvar._agHooked = true;
@@ -5614,6 +5745,7 @@ function hookControllerManutencaoDeDatas() {
         if (proto.criarJanelaDeParametros && !proto.criarJanelaDeParametros._agHooked) {
             var origCriar = proto.criarJanelaDeParametros;
             proto.criarJanelaDeParametros = function(a) {
+                window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = this;
                 if (a && a.model && a.model.data) {
                     if (!a.model.data.DataInicial) a.model.data.DataInicial = new Date(2020, 0, 1);
                     if (!a.model.data.DataFinal) a.model.data.DataFinal = new Date(2030, 0, 1);
@@ -5645,9 +5777,36 @@ function hookControllerManutencaoDeDatas() {
         }
 
         // Hook na abertura do passo 3 (Confirmação de Itens Selecionados)
+                // Hook na abertura do passo 2 (Selecao de Itens)
+        if (proto.criarJanelaDeSelecaoDeDocumentosParaManutencaoDeDatas && !proto.criarJanelaDeSelecaoDeDocumentosParaManutencaoDeDatas._agHooked) {
+            var origCriarSel = proto.criarJanelaDeSelecaoDeDocumentosParaManutencaoDeDatas;
+            proto.criarJanelaDeSelecaoDeDocumentosParaManutencaoDeDatas = function(a) {
+                window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = this;
+                var ret = origCriarSel.apply(this, arguments);
+                var ctrl = this;
+                setTimeout(function() {
+                    var grid = obterGridSelecaoManutencaoDatas();
+                    if (grid) {
+                        grid._controllerManutencao = ctrl;
+                        configurarGridSelecaoManutencaoDatas(grid);
+                    }
+                }, 30);
+                setTimeout(function() {
+                    var grid = obterGridSelecaoManutencaoDatas();
+                    if (grid) {
+                        grid._controllerManutencao = ctrl;
+                        configurarGridSelecaoManutencaoDatas(grid);
+                    }
+                }, 150);
+                return ret;
+            };
+            proto.criarJanelaDeSelecaoDeDocumentosParaManutencaoDeDatas._agHooked = true;
+        }
+
         if (proto.criarJanelaDeConfirmacao && !proto.criarJanelaDeConfirmacao._agHooked) {
             var origCriarConf = proto.criarJanelaDeConfirmacao;
             proto.criarJanelaDeConfirmacao = function(b) {
+                window.__ULTIMO_CONTROLLER_MANUTENCAO_DATAS = this;
                 var ret = origCriarConf.apply(this, arguments);
                 var ctrl = this;
                 setTimeout(function() {
