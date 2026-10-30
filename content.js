@@ -4433,8 +4433,32 @@ var abrirModalItensMesesAnteriores = abrirModalItensDatasAnteriores;
 
 
 // --------------------------------------------------------------------------
-// 6.4.1 Janela de Progresso Real e Processamento em Lotes (Manutencao de Datas)
+// 6.4.1 Janela de Progresso Real e Processamento Otimizado (Manutencao de Datas)
 // --------------------------------------------------------------------------
+
+function combinarIdsDosLogs(acumulador, novosIds) {
+    if (novosIds === null || novosIds === undefined || novosIds === '') return acumulador;
+    if (acumulador === null || acumulador === undefined || acumulador === '') {
+        return Array.isArray(novosIds) ? novosIds.slice() : novosIds;
+    }
+    if (Array.isArray(acumulador) && Array.isArray(novosIds)) {
+        return acumulador.concat(novosIds);
+    }
+    if (Array.isArray(novosIds)) {
+        var strAcum = String(acumulador);
+        var strNovos = novosIds.join(',');
+        return strAcum ? (strAcum + ',' + strNovos) : strNovos;
+    }
+    if (Array.isArray(acumulador)) {
+        var partes = String(novosIds).split(',');
+        return acumulador.concat(partes);
+    }
+    var s1 = String(acumulador).trim();
+    var s2 = String(novosIds).trim();
+    if (!s1) return s2;
+    if (!s2) return s1;
+    return s1 + ',' + s2;
+}
 
 function criarJanelaProgressoManutencaoDatas(totalItens, totalLotes) {
     var segundosDecorridos = 0;
@@ -4442,7 +4466,9 @@ function criarJanelaProgressoManutencaoDatas(totalItens, totalLotes) {
 
     var lblTitulo = Ext.create('Ext.Component', {
         html: '<div style="font-size: 13px; font-weight: bold; color: #15428b; margin-bottom: 4px;">Atualizando Datas de Previsao</div>' +
-              '<div style="font-size: 11px; color: #64748b; margin-bottom: 12px;">Processando alteracoes em lotes seguros para evitar travamento e timeout do servidor.</div>'
+              '<div style="font-size: 11px; color: #64748b; margin-bottom: 12px;">' +
+              (totalLotes > 1 ? 'Processando alteracoes em lotes seguros para evitar travamento e timeout do servidor.' : 'Gravando alteracoes com timeout expandido para garantir estabilidade.') +
+              '</div>'
     });
 
     var barraProgresso = Ext.create('Ext.ProgressBar', {
@@ -4454,11 +4480,13 @@ function criarJanelaProgressoManutencaoDatas(totalItens, totalLotes) {
     });
 
     var lblStatusLote = Ext.create('Ext.Component', {
-        html: '<div style="font-size: 11px; font-weight: 600; color: #1e293b; margin-top: 10px;">Lote 1 de ' + totalLotes + ' em preparacao...</div>'
+        html: '<div style="font-size: 11px; font-weight: 600; color: #1e293b; margin-top: 10px;">' +
+              (totalLotes > 1 ? 'Lote 1 de ' + totalLotes + ' em processamento...' : 'Gravando ' + totalItens + ' item(ns)...') +
+              '</div>'
     });
 
     var lblInfoDoc = Ext.create('Ext.Component', {
-        html: '<div style="font-size: 10px; color: #64748b; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Aguardando envio do primeiro lote...</div>'
+        html: '<div style="font-size: 10px; color: #64748b; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Aguardando resposta do servidor...</div>'
     });
 
     var lblTimer = Ext.create('Ext.Component', {
@@ -4474,7 +4502,7 @@ function criarJanelaProgressoManutencaoDatas(totalItens, totalLotes) {
     });
 
     var win = Ext.create('Ext.window.Window', {
-        title: 'Manutencao de Datas - Processamento em Lote',
+        title: 'Manutencao de Datas - ' + (totalLotes > 1 ? 'Processamento em Lote' : 'Gravando'),
         width: 480,
         bodyPadding: '14 18',
         modal: true,
@@ -4502,7 +4530,11 @@ function criarJanelaProgressoManutencaoDatas(totalItens, totalLotes) {
         if (pct > 1) pct = 1;
         var pctNum = Math.round(pct * 100);
         barraProgresso.updateProgress(pct, pctNum + '% (' + concluidos + ' de ' + totItens + ' itens)');
-        lblStatusLote.update('<div style="font-size: 11px; font-weight: 600; color: #1e293b; margin-top: 10px;">Lote ' + loteNum + ' de ' + totLotes + ' (' + concluidos + ' de ' + totItens + ' concluidos)</div>');
+        if (totLotes > 1) {
+            lblStatusLote.update('<div style="font-size: 11px; font-weight: 600; color: #1e293b; margin-top: 10px;">Lote ' + loteNum + ' de ' + totLotes + ' (' + concluidos + ' de ' + totItens + ' concluidos)</div>');
+        } else {
+            lblStatusLote.update('<div style="font-size: 11px; font-weight: 600; color: #1e293b; margin-top: 10px;">Gravando dados no servidor...</div>');
+        }
         if (infoItem) {
             lblInfoDoc.update('<div style="font-size: 10px; color: #64748b; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Documento: <b>' + htmlEncodeSeguro(infoItem) + '</b></div>');
         }
@@ -4517,7 +4549,7 @@ function criarJanelaProgressoManutencaoDatas(totalItens, totalLotes) {
         lblStatusLote.update('<div style="font-size: 11px; font-weight: 600; color: #15803d; margin-top: 10px;">&#10004; Todas as alteracoes foram gravadas com sucesso!</div>');
         setTimeout(function() {
             if (typeof callback === 'function') callback();
-        }, 350);
+        }, 150);
     };
 
     win.fechar = function() {
@@ -4554,8 +4586,9 @@ function executarSalvarManutencaoEmLotes(controller, b) {
         return;
     }
 
-    // 1. Mapear todos os itens para o formato ProjecaoDeManutencaoDeDatasDeProducao
+    // 1. Mapear todos os itens para o formato ProjecaoDeManutencaoDeDatasDeProducao (SEM poluir f.data com campos extras)
     var listaCompleta = [];
+    var infoItens = [];
     Ext.each(itensOriginais, function(g) {
         var f = Ext.create("GMF.model.Projecao.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ProjecaoDeManutencaoDeDatasDeProducao");
         f.data.ID = g.data.ID;
@@ -4569,22 +4602,95 @@ function executarSalvarManutencaoEmLotes(controller, b) {
         f.data.CodigoDoMotivo = g.data.CodigoDoMotivo;
         f.data.Observacao = g.data.Observacao;
         f.data.EhEntrada = g.data.EhEntrada;
-
-        // Metadados amigaveis para a barra de progresso
-        f.data._displayDoc = g.data.NumeroCompletoDocumento || (g.data.NumeroDoDocumento ? ('Doc ' + g.data.NumeroDoDocumento) : 'OP');
-        f.data._displayItem = g.data.NumeroItemESubitem != null ? g.data.NumeroItemESubitem : (g.data.NumeroDoItem + (g.data.NumeroDoSubItem ? '.' + g.data.NumeroDoSubItem : ''));
-        f.data._displayProd = g.data.Produto || g.data.NomeDoProduto || '';
         listaCompleta.push(f.data);
+
+        // Metadados amigaveis para a interface mantidos fora do objeto f.data enviado ao servidor
+        var doc = g.data.NumeroCompletoDocumento || (g.data.NumeroDoDocumento ? ('Doc ' + g.data.NumeroDoDocumento) : 'OP');
+        var item = g.data.NumeroItemESubitem != null ? g.data.NumeroItemESubitem : (g.data.NumeroDoItem + (g.data.NumeroDoSubItem ? '.' + g.data.NumeroDoSubItem : ''));
+        infoItens.push(doc + (item ? ' (Item ' + item + ')' : ''));
     });
 
     var totalItens = listaCompleta.length;
-    var TAMANHO_LOTE = 20; // 20 itens por envio (evita estourar o timeout do servidor)
-    var totalLotes = Math.ceil(totalItens / TAMANHO_LOTE);
-
     var tmv = b.model && b.model.data ? b.model.data.IdDoTipoDeMovimento : null;
     var perfil = b.model && b.model.data ? b.model.data.PerfilTMV : null;
 
-    // 2. Abre a Janela de Progresso Real
+    // Se houver poucos itens (<= 25), executa em ENVIO DIRETO UNICO (super rapido, < 1s, sem overhead de loop)
+    var LIMITE_LOTE_UNICO = 25;
+    if (totalItens <= LIMITE_LOTE_UNICO) {
+        var modalProgressoDireto = criarJanelaProgressoManutencaoDatas(totalItens, 1);
+        modalProgressoDireto.show();
+        modalProgressoDireto.atualizar(1, 1, 0, totalItens, infoItens[0] || '');
+
+        var payloadDireto = {
+            lista: listaCompleta,
+            tmv: tmv,
+            perfil: perfil
+        };
+
+        Ext.Ajax.request({
+            timeout: 120000,
+            url: "ManutencaoDeDatas/Salvar",
+            method: "POST",
+            params: Ext.encode(payloadDireto),
+            headers: { "Content-Type": "application/json" },
+            scope: controller,
+            success: function(resp) {
+                var dadosResp;
+                try {
+                    dadosResp = Ext.decode(resp.responseText);
+                } catch(e) {
+                    dadosResp = {};
+                }
+
+                modalProgressoDireto.concluir(function() {
+                    modalProgressoDireto.fechar();
+                    if (Ext.Msg && Ext.Msg.isVisible && Ext.Msg.isVisible()) {
+                        Ext.Msg.hide();
+                    }
+
+                    // Atribui exatamente o idDosLogs retornado (como no ERP nativo)
+                    var logsId = dadosResp ? dadosResp.idDosLogs : null;
+                    if (!logsId || (Array.isArray(logsId) && logsId.length === 0)) {
+                        logsId = '0'; // Protege para que ListarAlteracoes nao faca full scan no banco
+                    }
+                    controller.idsLogAlteracoes = logsId;
+
+                    if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes) {
+                        GMF.servico.Util.Funcoes.customMessageBox("Status", "Alteracoes de data realizadas com sucesso.", Ext.MessageBox.INFO);
+                    } else {
+                        mostrarToastNotificacao("Alteracoes de data realizadas com sucesso.");
+                    }
+
+                    controller.ativarPasso(b, controller.assistente.setarPasso(4));
+
+                    if (b.formulario && b.formulario.up('tabContainer')) {
+                        b.formulario.up('tabContainer').destroy();
+                    }
+                });
+            },
+            failure: function(resp) {
+                modalProgressoDireto.fechar();
+                if (Ext.Msg && Ext.Msg.isVisible && Ext.Msg.isVisible()) {
+                    Ext.Msg.hide();
+                }
+                var msgErro = "Ocorreu um erro ao salvar as alteracoes no servidor.";
+                if (resp && resp.timedout) {
+                    msgErro = "O tempo de resposta do servidor expirou ao gravar as alteracoes.";
+                }
+                if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes) {
+                    window.GMF.servico.Util.Funcoes.customMessageBox("Erro na Gravacao", msgErro, Ext.MessageBox.ERROR);
+                } else {
+                    Ext.Msg.alert("Erro", msgErro);
+                }
+            }
+        });
+        return;
+    }
+
+    // Para grandes volumes (> 25 itens), executa em LOTES SEGUROS de 20 itens com progresso proporcional
+    var TAMANHO_LOTE = 20;
+    var totalLotes = Math.ceil(totalItens / TAMANHO_LOTE);
+
     var modalProgresso = criarJanelaProgressoManutencaoDatas(totalItens, totalLotes);
     modalProgresso.show();
 
@@ -4593,7 +4699,7 @@ function executarSalvarManutencaoEmLotes(controller, b) {
         canceladoPeloUsuario = true;
     };
 
-    var todosIdsLogs = [];
+    var todosIdsLogs = null;
     var itensSalvosComSucesso = 0;
     var indiceLoteAtual = 0;
 
@@ -4602,7 +4708,7 @@ function executarSalvarManutencaoEmLotes(controller, b) {
             modalProgresso.fechar();
             mostrarToastNotificacao('Processamento interrompido. ' + itensSalvosComSucesso + ' itens foram alterados.');
             if (itensSalvosComSucesso > 0) {
-                controller.idsLogAlteracoes = todosIdsLogs;
+                controller.idsLogAlteracoes = todosIdsLogs || '0';
                 controller.ativarPasso(b, controller.assistente.setarPasso(4));
                 if (b.formulario && b.formulario.up('tabContainer')) {
                     b.formulario.up('tabContainer').destroy();
@@ -4614,9 +4720,8 @@ function executarSalvarManutencaoEmLotes(controller, b) {
         var inicio = indiceLoteAtual * TAMANHO_LOTE;
         var fim = Math.min(inicio + TAMANHO_LOTE, totalItens);
         var itensDesteLote = listaCompleta.slice(inicio, fim);
+        var infoDoc = infoItens[inicio] || '';
 
-        var primeiroItem = itensDesteLote[0];
-        var infoDoc = primeiroItem ? (primeiroItem._displayDoc + ' (Item ' + primeiroItem._displayItem + ')') : '';
         modalProgresso.atualizar(indiceLoteAtual + 1, totalLotes, itensSalvosComSucesso, totalItens, infoDoc);
 
         var payload = {
@@ -4626,7 +4731,7 @@ function executarSalvarManutencaoEmLotes(controller, b) {
         };
 
         Ext.Ajax.request({
-            timeout: 120000, // 2 minutos por lote (super seguro)
+            timeout: 120000,
             url: "ManutencaoDeDatas/Salvar",
             method: "POST",
             params: Ext.encode(payload),
@@ -4640,8 +4745,8 @@ function executarSalvarManutencaoEmLotes(controller, b) {
                     dadosResp = {};
                 }
 
-                if (dadosResp && dadosResp.idDosLogs && Array.isArray(dadosResp.idDosLogs)) {
-                    todosIdsLogs.push.apply(todosIdsLogs, dadosResp.idDosLogs);
+                if (dadosResp && dadosResp.idDosLogs) {
+                    todosIdsLogs = combinarIdsDosLogs(todosIdsLogs, dadosResp.idDosLogs);
                 }
 
                 itensSalvosComSucesso += itensDesteLote.length;
@@ -4650,7 +4755,7 @@ function executarSalvarManutencaoEmLotes(controller, b) {
                 modalProgresso.atualizar(indiceLoteAtual, totalLotes, itensSalvosComSucesso, totalItens, infoDoc);
 
                 if (indiceLoteAtual < totalLotes) {
-                    setTimeout(processarLote, 100);
+                    setTimeout(processarLote, 50);
                 } else {
                     // 100% Concluido com Sucesso!
                     modalProgresso.concluir(function() {
@@ -4659,18 +4764,19 @@ function executarSalvarManutencaoEmLotes(controller, b) {
                             Ext.Msg.hide();
                         }
 
-                        controller.idsLogAlteracoes = todosIdsLogs;
+                        controller.idsLogAlteracoes = todosIdsLogs || '0';
+
+                        if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes) {
+                            var msgSucesso = "Todas as <b>" + totalItens + "</b> alteracoes de datas foram realizadas com sucesso em " + totalLotes + " lotes!";
+                            window.GMF.servico.Util.Funcoes.customMessageBox("Sucesso", msgSucesso, Ext.MessageBox.INFO);
+                        } else {
+                            mostrarToastNotificacao("Alteracoes de data concluidas com sucesso!");
+                        }
+
                         controller.ativarPasso(b, controller.assistente.setarPasso(4));
 
                         if (b.formulario && b.formulario.up('tabContainer')) {
                             b.formulario.up('tabContainer').destroy();
-                        }
-
-                        if (window.GMF && window.GMF.servico && window.GMF.servico.Util && window.GMF.servico.Util.Funcoes) {
-                            var msgSucesso = "Todas as <b>" + totalItens + "</b> alteracoes de datas foram realizadas com sucesso em " + totalLotes + " lote(s)!";
-                            window.GMF.servico.Util.Funcoes.customMessageBox("Sucesso", msgSucesso, Ext.MessageBox.INFO);
-                        } else {
-                            mostrarToastNotificacao("Alteracoes de data concluidas com sucesso!");
                         }
                     });
                 }
@@ -4697,7 +4803,7 @@ function executarSalvarManutencaoEmLotes(controller, b) {
                 }
 
                 if (itensSalvosComSucesso > 0) {
-                    controller.idsLogAlteracoes = todosIdsLogs;
+                    controller.idsLogAlteracoes = todosIdsLogs || '0';
                     controller.ativarPasso(b, controller.assistente.setarPasso(4));
                     if (b.formulario && b.formulario.up('tabContainer')) {
                         b.formulario.up('tabContainer').destroy();
@@ -4710,6 +4816,7 @@ function executarSalvarManutencaoEmLotes(controller, b) {
     processarLote();
 }
 
+
 // Hook nos controllers e views de Manutenção de Datas
 function hookControllerManutencaoDeDatas() {
     if (!window.GMF || !window.GMF.controller || !window.GMF.controller.dominio || !window.GMF.controller.dominio.MovimentacaoDeEntradaESaida) return;
@@ -4717,6 +4824,18 @@ function hookControllerManutencaoDeDatas() {
     if (mov.ManutencaoDeDatas && mov.ManutencaoDeDatas.ControllerDeManutencaoDeDatas && mov.ManutencaoDeDatas.ControllerDeManutencaoDeDatas.prototype) {
         var proto = mov.ManutencaoDeDatas.ControllerDeManutencaoDeDatas.prototype;
         // Hook no acaoSalvar (Botao Concluir do Passo 3) -> Processamento em Lotes com Barra de Progresso Real
+        // Blindagem do Passo 4 contra travamento por full-scan na tabela de logs
+        if (proto.criarJanelaDeLogDelteracoes && !proto.criarJanelaDeLogDelteracoes._agHooked) {
+            var origCriarLog = proto.criarJanelaDeLogDelteracoes;
+            proto.criarJanelaDeLogDelteracoes = function(b) {
+                if (!this.idsLogAlteracoes || (Array.isArray(this.idsLogAlteracoes) && this.idsLogAlteracoes.length === 0)) {
+                    this.idsLogAlteracoes = '0';
+                }
+                return origCriarLog.apply(this, arguments);
+            };
+            proto.criarJanelaDeLogDelteracoes._agHooked = true;
+        }
+
         if (proto.acaoSalvar && !proto.acaoSalvar._agHooked) {
             proto.acaoSalvar = function(b) {
                 return executarSalvarManutencaoEmLotes(this, b);
@@ -5854,9 +5973,15 @@ const extJsInitializationMonitor = setInterval(() => {
 
             // Verifica se a resposta foi de AutorizarProducao e se retornou algum erro de MRP em 200
             tratarPossivelErroMRP(response, options);
-            if (options && options.url && options.url.indexOf('ManutencaoDeDatas') !== -1) {
+            if (options && options.url && (options.url.indexOf('ManutencaoDeDatas') !== -1 || options.url.indexOf('ListarAlteracoes') !== -1)) {
                 if (window.Ext && window.Ext.Msg && window.Ext.Msg.isVisible && window.Ext.Msg.isVisible()) {
                     window.Ext.Msg.hide();
+                }
+                var gridLog = window.Ext.ComponentQuery ? window.Ext.ComponentQuery.query('[itemid=listaDeLogDeManutencaoDeDatas]')[0] : null;
+                if (gridLog) {
+                    if (gridLog.loadMask && gridLog.loadMask.hide) gridLog.loadMask.hide();
+                    var vl = gridLog.getView ? gridLog.getView() : null;
+                    if (vl && vl.loadMask && vl.loadMask.hide) vl.loadMask.hide();
                 }
             }
 
