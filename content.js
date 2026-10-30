@@ -1725,12 +1725,15 @@ function adicionarItemSeNaoExistir(lista, modelReg) {
     if (!lista || !modelReg) return false;
     var d = modelReg.data || modelReg;
     var idDoc = d.IDDoDocumento;
+    var numDoc = d.NumeroDoDocumento || d.NumeroCompletoDocumento;
     var numItem = d.NumeroDoItem;
     var numSub = d.NumeroDoSubItem;
 
     for (var i = 0; i < lista.length; i++) {
         var exist = lista[i].data || lista[i];
-        if (exist.IDDoDocumento == idDoc && exist.NumeroDoItem == numItem && exist.NumeroDoSubItem == numSub) {
+        var idIgual = (idDoc && exist.IDDoDocumento && exist.IDDoDocumento == idDoc) ||
+                      (numDoc && (exist.NumeroDoDocumento == numDoc || exist.NumeroCompletoDocumento == numDoc));
+        if (idIgual && exist.NumeroDoItem == numItem && (exist.NumeroDoSubItem == numSub || (!exist.NumeroDoSubItem && !numSub))) {
             lista[i] = modelReg;
             return false;
         }
@@ -1810,10 +1813,22 @@ function buscarItensNoServidorEAvancar(ctrl, grid, itensCsv, dtIniVal, dtFimVal,
     lblStatus.update('<div style="font-size: 11px; color: #15428b; font-weight: bold;">Consultando ' + totalOps + ' OPs no banco de dados do ERP...</div>');
 
     var urlListar = (grid.store && grid.store.proxy && grid.store.proxy.url) ? grid.store.proxy.url : 'ManutencaoDeDatas/Listar';
-    var extraParamsPadrao = (grid.store && grid.store.proxy && grid.store.proxy.extraParams) ? grid.store.proxy.extraParams : {};
+    var proxyMethod = (grid.store && grid.store.proxy && grid.store.proxy.actionMethods && grid.store.proxy.actionMethods.read) ? grid.store.proxy.actionMethods.read : 'GET';
 
-    var tmvPadrao = extraParamsPadrao.tmv || (ctrl.model && ctrl.model.data ? ctrl.model.data.IdDoTipoDeMovimento : null);
-    var perfilPadrao = extraParamsPadrao.perfilTMV || (ctrl.model && ctrl.model.data ? ctrl.model.data.PerfilTMV : null);
+    var extraParamsPadrao = (grid.store && grid.store.proxy && grid.store.proxy.extraParams) ? Ext.apply({}, grid.store.proxy.extraParams) : {};
+    if (ctrl && ctrl.model && ctrl.model.data) {
+        for (var pKey in ctrl.model.data) {
+            if (ctrl.model.data.hasOwnProperty(pKey) && ctrl.model.data[pKey] !== undefined && ctrl.model.data[pKey] !== null && extraParamsPadrao[pKey] === undefined) {
+                extraParamsPadrao[pKey] = ctrl.model.data[pKey];
+            }
+        }
+    }
+
+    var tmvPadrao = extraParamsPadrao.tmv || extraParamsPadrao.IdDoTipoDeMovimento || (ctrl.model && ctrl.model.data ? ctrl.model.data.IdDoTipoDeMovimento : 'I507');
+    var perfilPadrao = extraParamsPadrao.perfilTMV || extraParamsPadrao.PerfilTMV || (ctrl.model && ctrl.model.data ? ctrl.model.data.PerfilTMV : 'VDA0601');
+
+    var sf = grid.textField || (grid.down ? grid.down('[name=searchField]') : null);
+    var paramPesquisa = (sf && sf.paramName) ? sf.paramName : 'valorDeConsulta';
 
     if (!Array.isArray(ctrl.listaDeItensParaManutencao)) {
         ctrl.listaDeItensParaManutencao = [];
@@ -1823,6 +1838,33 @@ function buscarItensNoServidorEAvancar(ctrl, grid, itensCsv, dtIniVal, dtFimVal,
     var opsConcluidas = 0;
     var opsNaoEncontradas = [];
     var cancelado = false;
+
+    // 0. Pre-verificacao no store local da grid (se registros ja estiverem na pagina visivel)
+    var registrosLocais = (grid.store && grid.store.getRange) ? grid.store.getRange() : [];
+    if (registrosLocais.length > 0) {
+        listaOps.forEach(function(opKey) {
+            var itensDestaOp = mapaOps[opKey] || [];
+            for (var r = 0; r < registrosLocais.length; r++) {
+                var rec = registrosLocais[r];
+                for (var k = 0; k < itensDestaOp.length; k++) {
+                    var itCsv = itensDestaOp[k];
+                    if (itemCorrespondeAoRegistro(itCsv, rec)) {
+                        var modelReg = Ext.create('GMF.model.Projecao.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ProjecaoDeManutencaoDeDatasDeProducao', rec.data || rec);
+                        var dataIniFinal = itCsv.novaData ? converterDataBr(itCsv.novaData) : dtIniVal;
+                        var dataFimFinal = itCsv.novaData ? converterDataBr(itCsv.novaData) : (dtFimVal || dtIniVal);
+
+                        modelReg.data.DataPrevisaoInicioAtual = dataIniFinal;
+                        modelReg.data.DataPrevisaoFinalAtual = dataFimFinal;
+                        modelReg.data.CodigoDoMotivo = motivoVal;
+                        modelReg.data.Observacao = obsVal;
+
+                        adicionarItemSeNaoExistir(ctrl.listaDeItensParaManutencao, modelReg);
+                        itensEncontrados++;
+                    }
+                }
+            }
+        });
+    }
 
     var CONCORRENCIA = 4;
     var indiceOpAtual = 0;
@@ -1838,84 +1880,135 @@ function buscarItensNoServidorEAvancar(ctrl, grid, itensCsv, dtIniVal, dtFimVal,
         }
 
         var opAtual = listaOps[indiceOpAtual++];
-        var params = {
-            valorDeConsulta: opAtual,
-            limit: 100,
-            page: 1,
-            start: 0
-        };
-        if (tmvPadrao) params.tmv = tmvPadrao;
-        if (perfilPadrao) params.perfilTMV = perfilPadrao;
+        var itensDestaOp = mapaOps[opAtual] || [];
+        var codAuxPrimeiro = (itensDestaOp[0] && itensDestaOp[0].codigoAuxiliar) ? String(itensDestaOp[0].codigoAuxiliar).trim() : '';
 
-        Ext.Ajax.request({
-            url: urlListar,
-            method: 'GET',
-            params: params,
-            timeout: 30000,
-            success: function(resp) {
-                var dados;
-                try {
-                    dados = Ext.decode(resp.responseText);
-                } catch(e) {
-                    dados = {};
-                }
+        function montarParams(termo, formatoData, usarRangeDoc) {
+            var p = Ext.apply({}, extraParamsPadrao);
+            p.limit = 100;
+            p.page = 1;
+            p.start = 0;
 
-                var registros = (dados && Array.isArray(dados.registros)) ? dados.registros : [];
-                var achouAlgum = false;
+            if (formatoData === 'iso') {
+                p.dataInicial = '2020-01-01';
+                p.DataInicial = '2020-01-01';
+                p.dataFinal = '2030-12-31';
+                p.DataFinal = '2030-12-31';
+            } else {
+                p.dataInicial = '01/01/2020';
+                p.DataInicial = '01/01/2020';
+                p.dataFinal = '31/12/2030';
+                p.DataFinal = '31/12/2030';
+            }
 
-                if (registros.length > 0) {
-                    var itensDestaOp = mapaOps[opAtual] || [];
-                    for (var r = 0; r < registros.length; r++) {
-                        var regRaw = registros[r];
-                        var modelReg = Ext.create('GMF.model.Projecao.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ProjecaoDeManutencaoDeDatasDeProducao', regRaw);
+            p.tmv = tmvPadrao;
+            p.IdDoTipoDeMovimento = tmvPadrao;
+            p.perfilTMV = perfilPadrao;
+            p.PerfilTMV = perfilPadrao;
 
-                        for (var k = 0; k < itensDestaOp.length; k++) {
-                            var itCsv = itensDestaOp[k];
-                            if (itemCorrespondeAoRegistro(itCsv, modelReg)) {
-                                achouAlgum = true;
-                                var dataIniFinal = itCsv.novaData ? converterDataBr(itCsv.novaData) : dtIniVal;
-                                var dataFimFinal = itCsv.novaData ? converterDataBr(itCsv.novaData) : (dtFimVal || dtIniVal);
+            if (usarRangeDoc) {
+                p.numeroDocumentoInicial = termo;
+                p.numeroDocumentoFinal = termo;
+                p.NumeroDocumentoInicial = termo;
+                p.NumeroDocumentoFinal = termo;
+                delete p.valorDeConsulta;
+                delete p.query;
+            } else {
+                p[paramPesquisa] = termo;
+                p.valorDeConsulta = termo;
+                p.query = termo;
+            }
 
-                                modelReg.data.DataPrevisaoInicioAtual = dataIniFinal;
-                                modelReg.data.DataPrevisaoFinalAtual = dataFimFinal;
-                                modelReg.data.CodigoDoMotivo = motivoVal;
-                                modelReg.data.Observacao = obsVal;
+            return p;
+        }
 
-                                adicionarItemSeNaoExistir(ctrl.listaDeItensParaManutencao, modelReg);
-                                itensEncontrados++;
+        function tentarConsulta(tentativaIdx) {
+            var params;
+            if (tentativaIdx === 1) {
+                // Tentativa 1: busca pelo numero da OP com datas no padrao brasileiro (dd/MM/yyyy)
+                params = montarParams(opAtual, 'br', false);
+            } else if (tentativaIdx === 2 && codAuxPrimeiro) {
+                // Tentativa 2: busca pelo Codigo Auxiliar (ex: LBX0153/26P)
+                params = montarParams(codAuxPrimeiro, 'br', false);
+            } else if (tentativaIdx === 3) {
+                // Tentativa 3: busca pelo numero da OP com datas no padrao ISO (yyyy-MM-dd)
+                params = montarParams(opAtual, 'iso', false);
+            } else if (tentativaIdx === 4) {
+                // Tentativa 4: busca via intervalo de documentos (numeroDocumentoInicial / Final)
+                params = montarParams(opAtual, 'br', true);
+            } else {
+                opsNaoEncontradas.push(opAtual);
+                avancarProgresso();
+                return;
+            }
+
+            Ext.Ajax.request({
+                url: urlListar,
+                method: proxyMethod,
+                params: params,
+                timeout: 30000,
+                _isBuscaAutomaticaCsv: true,
+                success: function(resp) {
+                    var dados;
+                    try {
+                        dados = Ext.decode(resp.responseText);
+                    } catch(e) {
+                        dados = {};
+                    }
+
+                    var registros = (dados && Array.isArray(dados.registros)) ? dados.registros : [];
+                    var achouAlgum = false;
+
+                    if (registros.length > 0) {
+                        for (var r = 0; r < registros.length; r++) {
+                            var regRaw = registros[r];
+                            var modelReg = Ext.create('GMF.model.Projecao.MovimentacaoDeEntradaESaida.ManutencaoDeDatas.ProjecaoDeManutencaoDeDatasDeProducao', regRaw);
+
+                            for (var k = 0; k < itensDestaOp.length; k++) {
+                                var itCsv = itensDestaOp[k];
+                                if (itemCorrespondeAoRegistro(itCsv, modelReg)) {
+                                    achouAlgum = true;
+                                    var dataIniFinal = itCsv.novaData ? converterDataBr(itCsv.novaData) : dtIniVal;
+                                    var dataFimFinal = itCsv.novaData ? converterDataBr(itCsv.novaData) : (dtFimVal || dtIniVal);
+
+                                    modelReg.data.DataPrevisaoInicioAtual = dataIniFinal;
+                                    modelReg.data.DataPrevisaoFinalAtual = dataFimFinal;
+                                    modelReg.data.CodigoDoMotivo = motivoVal;
+                                    modelReg.data.Observacao = obsVal;
+
+                                    adicionarItemSeNaoExistir(ctrl.listaDeItensParaManutencao, modelReg);
+                                    itensEncontrados++;
+                                }
                             }
                         }
                     }
-                }
 
-                if (!achouAlgum) {
-                    opsNaoEncontradas.push(opAtual);
+                    if (achouAlgum) {
+                        avancarProgresso();
+                    } else {
+                        tentarConsulta(tentativaIdx + 1);
+                    }
+                },
+                failure: function() {
+                    tentarConsulta(tentativaIdx + 1);
                 }
+            });
+        }
 
-                opsConcluidas++;
-                var pct = totalOps > 0 ? (opsConcluidas / totalOps) : 1;
-                progressBar.updateProgress(pct, Math.round(pct * 100) + '% (' + opsConcluidas + ' de ' + totalOps + ' OPs)');
-                lblStatus.update('<div style="font-size: 11px; color: #1e293b;">Buscando no servidor... <b>' + itensEncontrados + '</b> item(ns) prontos localizados.</div>');
+        function avancarProgresso() {
+            opsConcluidas++;
+            var pct = totalOps > 0 ? (opsConcluidas / totalOps) : 1;
+            progressBar.updateProgress(pct, Math.round(pct * 100) + '% (' + opsConcluidas + ' de ' + totalOps + ' OPs)');
+            lblStatus.update('<div style="font-size: 11px; color: #1e293b;">Buscando no servidor... <b>' + itensEncontrados + '</b> item(ns) prontos localizados.</div>');
 
-                if (indiceOpAtual < totalOps) {
-                    processarProximaOp();
-                } else if (opsConcluidas >= totalOps) {
-                    finalizarBusca();
-                }
-            },
-            failure: function() {
-                opsNaoEncontradas.push(opAtual);
-                opsConcluidas++;
-                var pct = totalOps > 0 ? (opsConcluidas / totalOps) : 1;
-                progressBar.updateProgress(pct, Math.round(pct * 100) + '% (' + opsConcluidas + ' de ' + totalOps + ' OPs)');
-
-                if (indiceOpAtual < totalOps) {
-                    processarProximaOp();
-                } else if (opsConcluidas >= totalOps) {
-                    finalizarBusca();
-                }
+            if (indiceOpAtual < totalOps) {
+                processarProximaOp();
+            } else if (opsConcluidas >= totalOps) {
+                finalizarBusca();
             }
-        });
+        }
+
+        tentarConsulta(1);
     }
 
     function finalizarBusca() {
@@ -6740,6 +6833,7 @@ const extJsInitializationMonitor = setInterval(() => {
             }
 
             if (options.url && options.url.indexOf('ManutencaoDeDatas/Listar') !== -1) {
+                if (options._isBuscaAutomaticaCsv) return;
                 var isDocAuxAtivo = (sessionStorage.getItem('PESQUISAR_DOC_AUX_SOMENTE') || localStorage.getItem('PESQUISAR_DOC_AUX_SOMENTE')) === 'true';
                 var gridMD = obterGridSelecaoManutencaoDatas();
                 if (gridMD) {
@@ -7006,6 +7100,7 @@ const extJsInitializationMonitor = setInterval(() => {
             }
 
             if (options.url && options.url.indexOf('ManutencaoDeDatas/Listar') !== -1) {
+                if (options._isBuscaAutomaticaCsv) return;
                 try {
                     var isDocAuxAtivo = (sessionStorage.getItem('PESQUISAR_DOC_AUX_SOMENTE') || localStorage.getItem('PESQUISAR_DOC_AUX_SOMENTE')) === 'true';
                     var gridMD = obterGridSelecaoManutencaoDatas();
