@@ -2738,15 +2738,10 @@ function injetarEstilosPersonalizados() {
         .x-column-header-sort-ASC, .x-column-header-sort-DESC {
             background-color: #dceaf8 !important;
         }
-        .x-column-header-sort-ASC .x-column-header-text {
-            font-weight: bold !important;
-            color: #0b497b !important;
-            padding-right: 16px !important;
-        }
+        .x-column-header-sort-ASC .x-column-header-text,
         .x-column-header-sort-DESC .x-column-header-text {
             font-weight: bold !important;
             color: #0b497b !important;
-            padding-right: 16px !important;
         }
 
         /* Botão inline dentro da coluna de Ação da tabela */
@@ -2757,17 +2752,21 @@ function injetarEstilosPersonalizados() {
             border-radius: 3px;
             color: #15428b;
             font-family: tahoma, arial, verdana, sans-serif;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: bold;
-            padding: 2px 10px;
+            padding: 1px 6px;
             cursor: pointer;
             box-shadow: inset 0 1px 0 #ffffff, 0 1px 1px rgba(0, 0, 0, 0.08);
-            line-height: 15px;
+            line-height: 14px;
             text-align: center;
             vertical-align: middle;
             text-decoration: none;
             user-select: none;
             box-sizing: border-box;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
             transition: border-color 0.15s, background-color 0.15s;
         }
         .ag-btn-finalizar-inline:hover {
@@ -2784,8 +2783,10 @@ function injetarEstilosPersonalizados() {
 
         /* Barra de Progresso Ultra-Otimizada para Apontamento */
         .ag-prog-bar-container {
-            width: 85px;
-            height: 15px;
+            max-width: 85px;
+            width: 100%;
+            min-width: 35px;
+            height: 14px;
             position: relative;
             background: #e0e6ed;
             border: 1px solid #a3bde3;
@@ -2807,8 +2808,8 @@ function injetarEstilosPersonalizados() {
             right: 0;
             bottom: 0;
             text-align: center;
-            font-size: 10px;
-            line-height: 13px;
+            font-size: 9px;
+            line-height: 12px;
             font-family: tahoma, arial, verdana, sans-serif;
             font-weight: bold;
             color: #15428b;
@@ -2985,7 +2986,7 @@ function injetarEstilosPersonalizados() {
 
 function obterOpsBloqueadasMRP() {
     try {
-        var str = localStorage.getItem('ERP_BLOQUEADAS_MRP');
+        var str = localStorage.getItem('ERP_BLOQUEADAS_MRP') || localStorage.getItem('AG2WEB_BLOQUEADAS_MRP');
         if (str) {
             return JSON.parse(str);
         }
@@ -3023,6 +3024,7 @@ function salvarOpBloqueadaMRP(op, motivo) {
         };
 
         localStorage.setItem('ERP_BLOQUEADAS_MRP', JSON.stringify(mapa));
+        localStorage.setItem('AG2WEB_BLOQUEADAS_MRP', JSON.stringify(mapa));
         atualizarBadgeOpsBloqueadasMRP();
         return idUnico;
     } catch(e) {
@@ -3036,6 +3038,7 @@ function removerOpBloqueadaMRP(idUnico) {
         if (mapa && mapa[idUnico]) {
             delete mapa[idUnico];
             localStorage.setItem('ERP_BLOQUEADAS_MRP', JSON.stringify(mapa));
+        localStorage.setItem('AG2WEB_BLOQUEADAS_MRP', JSON.stringify(mapa));
             atualizarBadgeOpsBloqueadasMRP();
             return true;
         }
@@ -3048,6 +3051,7 @@ function removerOpBloqueadaMRP(idUnico) {
 function limparTodasOpsBloqueadasMRP() {
     try {
         localStorage.removeItem('ERP_BLOQUEADAS_MRP');
+        localStorage.removeItem('AG2WEB_BLOQUEADAS_MRP');
         atualizarBadgeOpsBloqueadasMRP();
         if (typeof desmarcarCabecalhoSelecaoGrid === 'function') {
             desmarcarCabecalhoSelecaoGrid();
@@ -3195,7 +3199,7 @@ function abrirJanelaOpsBloqueadasMRP() {
                     width: 45,
                     align: 'center',
                     items: [{
-                        iconCls: 'x-grid-check-custom',
+                        iconCls: 'x-grid-check-atak',
                         tooltip: 'Desbloquear e reexibir na consulta',
                         handler: function(grid, rowIndex, colIndex, actionItem, event, record) {
                             var id = record.get('id');
@@ -3555,7 +3559,7 @@ function renderizarBotaoFinalizarInline(val, metaData, record, rowIndex) {
     var estDesc = record.get ? record.get('EstagioProducao') : (record.data ? record.data.EstagioProducao : record.EstagioProducao);
 
     if (est == 107 || est == '107' || estDesc == 'ORP Finalizada' || estDesc == 'Finalizada') {
-        return '<span style="color: #15428b; font-weight: bold; font-size: 11px;">Finalizada</span>';
+        return '<span style="color: #15428b; font-weight: bold; font-size: 10px; display: inline-block; line-height: 16px;">Finalizada</span>';
     }
 
     var recId = (record.internalId !== undefined && record.internalId !== null) ? htmlEncodeSeguro(record.internalId) : '';
@@ -3795,9 +3799,12 @@ function otimizarColunasGrid(grid) {
                         col.origRenderer = col.renderer;
                     }
                     col._headerOriginal = col._headerOriginal || col.text || col.header;
-                    col.text = 'Ação';
-                    col.header = 'Ação';
-                    col.width = 85;
+                    if (typeof col.setText === 'function') {
+                        col.setText('Ação');
+                    } else {
+                        col.text = 'Ação';
+                        col.header = 'Ação';
+                    }
                     col.renderer = renderizarBotaoFinalizarInline;
                     col._rendererOtimizadoFinalizar = true;
                     alterouAlguma = true;
@@ -3829,13 +3836,16 @@ function otimizarColunasGrid(grid) {
     } catch(e) {}
 
     // Se houve alteração de renderer em grid com dados renderizados, atualiza a view instantaneamente
-    if (alterouAlguma && grid.rendered && grid.getView && grid.getView().refresh) {
+    if (alterouAlguma && grid.rendered && grid.getView && grid.getView().refresh && !grid._emProcessamentoRefresh) {
         try {
+            grid._emProcessamentoRefresh = true;
             var store = grid.getStore ? grid.getStore() : null;
             if (store && store.getCount && store.getCount() > 0) {
                 grid.getView().refresh();
             }
-        } catch(e) {}
+        } catch(e) {} finally {
+            grid._emProcessamentoRefresh = false;
+        }
     }
 }
 
@@ -3906,21 +3916,12 @@ function atualizarElementosDoGrid(grid) {
     var pt = grid.down ? grid.down('pagingtoolbar') : null;
     if (pt) {
         pt.pageSize = 500;
-        
-        // Remove eventuais botões antigos com estilo verde ou duplicados
-        if (pt.items && pt.items.each) {
-            pt.items.each(function(item) {
-                if (item && item.text && (item.text.indexOf('') !== -1 || (item.text.indexOf('Finalizar') !== -1 && item.itemId !== 'btnFinalizarSelecionadasPt'))) {
-                    try { pt.remove(item); } catch(e){}
-                }
-            });
-        }
 
         var btnExistentePt = pt.down ? pt.down('#btnFinalizarSelecionadasPt') : null;
         if (!btnExistentePt) {
             try {
                 pt.add([
-                    '-',
+                    { xtype: 'tbseparator', itemId: 'sepFinalizarPt' },
                     {
                         xtype: 'button',
                         itemId: 'btnFinalizarSelecionadasPt',
@@ -3933,7 +3934,17 @@ function atualizarElementosDoGrid(grid) {
                         }
                     }
                 ]);
-                pt.updateLayout();
+                if (pt.updateLayout) pt.updateLayout();
+            } catch(e) {}
+        } else {
+            // Remove separadores duplicados do rodape se existirem
+            try {
+                var sepsPt = pt.query ? pt.query('#sepFinalizarPt') : [];
+                if (sepsPt && sepsPt.length > 1) {
+                    for (var sp = 1; sp < sepsPt.length; sp++) {
+                        pt.remove(sepsPt[sp], true);
+                    }
+                }
             } catch(e) {}
         }
     }
@@ -3941,14 +3952,20 @@ function atualizarElementosDoGrid(grid) {
     // 3. Injeta checkbox de Modo Liberação e botão na barra de ferramentas superior (tbar com Pesquisar)
     var topTb = grid.down ? grid.down('toolbar[dock="top"]') : null;
     if (topTb) {
-        // Remove eventuais botões antigos com estilo verde ou duplicados
+        // Remove apenas itens orfãos legados específicos, NUNCA componentes nativos como o Label Pesquisar
+        var itensParaRemover = [];
         if (topTb.items && topTb.items.each) {
             topTb.items.each(function(item) {
-                if (item && item.text && (item.text.indexOf('') !== -1 || (item.text.indexOf('Finalizar') !== -1 && item.itemId !== 'btnFinalizarSelecionadasTop'))) {
-                    try { topTb.remove(item); } catch(e){}
+                if (!item) return;
+                var id = String(item.itemId || item.id || '');
+                if (id === 'btnFinalizarAntigo' || (id !== 'btnFinalizarSelecionadasTop' && item.text && typeof item.text === 'string' && item.text.indexOf('Finalizar Selecionadas') !== -1)) {
+                    itensParaRemover.push(item);
                 }
             });
         }
+        itensParaRemover.forEach(function(it) {
+            try { topTb.remove(it, true); } catch(e) {}
+        });
 
         var chkExistente = topTb.down ? topTb.down('#chkModoLiberacaoTop') : null;
         var btnExistenteTop = topTb.down ? topTb.down('#btnFinalizarSelecionadasTop') : null;
@@ -3963,7 +3980,7 @@ function atualizarElementosDoGrid(grid) {
                     boxLabel: 'Modo Liberação de OP',
                     tooltip: 'Filtra todas as OPs da busca ocultando as que possuem dependências anteriores',
                     checked: isModoAtivo,
-                    width: 150,
+                    width: 165,
                     cls: 'ag-checkbox-extjs',
                     listeners: {
                         change: function(campo, novoValor) {
@@ -3980,7 +3997,8 @@ function atualizarElementosDoGrid(grid) {
                             } catch(e) {}
 
                             window.dispatchEvent(new CustomEvent('erp_modo_liberacao_alterado', { detail: { ativo: !!novoValor } }));
-                                                        mostrarToastNotificacao(novoValor ? 'Modo Liberação ativado: buscando todas as OPs...' : 'Modo Liberação desativado');
+                            window.dispatchEvent(new CustomEvent('ag2web_modo_liberacao_alterado', { detail: { ativo: !!novoValor } }));
+                            mostrarToastNotificacao(novoValor ? 'Modo Liberação ativado: buscando todas as OPs...' : 'Modo Liberação desativado');
 
                             var pt = grid.down ? grid.down('pagingtoolbar') : null;
                             if (pt) {
@@ -4012,22 +4030,14 @@ function atualizarElementosDoGrid(grid) {
                     }
                 });
 
-                var fillItem = topTb.down ? topTb.down('tbfill') : null;
-                if (fillItem) {
-                    var idxFill = topTb.items.indexOf(fillItem);
-                    topTb.insert(idxFill, '-');
-                    topTb.insert(idxFill + 1, chkComp);
-                    topTb.insert(idxFill + 2, progressoComp);
-                    topTb.insert(idxFill + 3, btnMrpComp);
-                } else if (btnExistenteTop) {
-                    var idxBtn = topTb.items.indexOf(btnExistenteTop);
-                    topTb.insert(idxBtn, '-');
-                    topTb.insert(idxBtn + 1, chkComp);
-                    topTb.insert(idxBtn + 2, progressoComp);
-                    topTb.insert(idxBtn + 3, btnMrpComp);
-                } else {
-                    topTb.add(['-', chkComp, progressoComp, btnMrpComp]);
-                }
+                var campoPesq = topTb.down('[itemid="CampoDePesquisa"]') || topTb.down('[name="searchField"]');
+                var idxInsert = campoPesq ? (topTb.items.indexOf(campoPesq) + 1) : topTb.items.getCount();
+
+                topTb.insert(idxInsert, { xtype: 'tbseparator', itemId: 'sepModoLiberacaoTop' });
+                topTb.insert(idxInsert + 1, chkComp);
+                topTb.insert(idxInsert + 2, progressoComp);
+                topTb.insert(idxInsert + 3, btnMrpComp);
+
                 if (topTb.updateLayout) topTb.updateLayout();
                 else if (topTb.doLayout) topTb.doLayout();
             } catch(e) {
@@ -4084,24 +4094,41 @@ function atualizarElementosDoGrid(grid) {
         // B. Injeta o Botão de Finalizar Selecionadas em Lote
         if (!btnExistenteTop) {
             try {
-                topTb.add([
-                    '->',
-                    {
-                        xtype: 'button',
-                        itemId: 'btnFinalizarSelecionadasTop',
-                        text: 'Finalizar Selecionadas (Lote)',
-                        iconCls: 'finalizar',
-                        tooltip: 'Finalizar ordens de produção marcadas com confirmação prévia',
-                        cls: 'ag-btn-extjs',
-                        handler: function() {
-                            dispararFluxoFinalizacaoLote();
-                        }
+                var fillExistente = topTb.down('#fillFinalizarTop');
+                if (!fillExistente) {
+                    topTb.add({ xtype: 'tbfill', itemId: 'fillFinalizarTop' });
+                }
+                topTb.add({
+                    xtype: 'button',
+                    itemId: 'btnFinalizarSelecionadasTop',
+                    text: 'Finalizar Selecionadas (Lote)',
+                    iconCls: 'finalizar',
+                    tooltip: 'Finalizar ordens de produção marcadas com confirmação prévia',
+                    cls: 'ag-btn-extjs',
+                    handler: function() {
+                        dispararFluxoFinalizacaoLote();
                     }
-                ]);
+                });
                 if (topTb.updateLayout) topTb.updateLayout();
                 else if (topTb.doLayout) topTb.doLayout();
             } catch(e) {}
         }
+
+        // C. Remove separadores e spacers duplicados na toolbar se existirem
+        try {
+            var sepsTop = topTb.query ? topTb.query('#sepModoLiberacaoTop') : [];
+            if (sepsTop && sepsTop.length > 1) {
+                for (var st = 1; st < sepsTop.length; st++) {
+                    topTb.remove(sepsTop[st], true);
+                }
+            }
+            var fillsTop = topTb.query ? topTb.query('#fillFinalizarTop') : [];
+            if (fillsTop && fillsTop.length > 1) {
+                for (var ft = 1; ft < fillsTop.length; ft++) {
+                    topTb.remove(fillsTop[ft], true);
+                }
+            }
+        } catch(e) {}
     }
 
     // 4. Otimiza renderização das colunas (Botão Finalizar e Apontamento leves em HTML/CSS)
@@ -6188,10 +6215,13 @@ function aplicarPatchesEstruturaisExtJS() {
                                                 cItem.origRenderer = cItem.renderer;
                                             }
                                             cItem._headerOriginal = cItem._headerOriginal || cItem.text || cItem.header;
+                                            if (typeof cItem.setText === 'function') {
+                                                cItem.setText('Ação');
+                                            } else {
+                                                cItem.text = 'Ação';
+                                                cItem.header = 'Ação';
+                                            }
                                             cItem.renderer = renderizarBotaoFinalizarInline;
-                                            cItem.width = 85;
-                                            cItem.text = 'Ação';
-                                            cItem.header = 'Ação';
                                             cItem._rendererOtimizadoFinalizar = true;
                                         }
                                     } else if (isColunaDeApontamento(cItem, grid)) {
@@ -6222,18 +6252,16 @@ function aplicarPatchesEstruturaisExtJS() {
                                             delete oCol.renderer;
                                             oCol.renderer = null;
                                         }
-                                        oCol.width = 40;
-                                        oCol.text = 'Ação';
-                                        oCol.header = 'Ação';
+                                        if (typeof oCol.setText === 'function') oCol.setText('Ação');
+                                        else { oCol.text = 'Ação'; oCol.header = 'Ação'; }
                                     }
                                 } else if (oCol.renderer === renderizarBotaoFinalizarInline || oCol._rendererOtimizadoFinalizar) {
                                     delete oCol._rendererOtimizadoFinalizar;
                                     var oColTxt = String(oCol.text || oCol.header || '').trim();
                                     if (oColTxt === 'Dependências' || oColTxt === 'Dependencias' || (typeof window.formatarDependencias === 'function')) {
                                         oCol.renderer = window.formatarDependencias || oCol.origRenderer;
-                                        oCol.text = 'Dependências';
-                                        oCol.header = 'Dependências';
-                                        oCol.width = 40;
+                                        if (typeof oCol.setText === 'function') oCol.setText('Dependências');
+                                        else { oCol.text = 'Dependências'; oCol.header = 'Dependências'; }
                                     } else if (oCol.origRenderer && oCol.origRenderer !== renderizarBotaoFinalizarInline) {
                                         oCol.renderer = oCol.origRenderer;
                                     } else {
@@ -6261,9 +6289,8 @@ function aplicarPatchesEstruturaisExtJS() {
             if (tableProto.renderCell && !tableProto._agRenderCellHooked) {
                 var origRenderCell = tableProto.renderCell;
                 tableProto.renderCell = function(column, record, recordIndex, rowIndex, columnIndex, out) {
-                    if (column) {
+                    if (column && !column._rendererOtimizadoFinalizar && !column._rendererOtimizadoProgressBar) {
                         var grid = obterGridDaView(this) || column.grid || (column.up && column.up('grid'));
-                        // NUNCA modifica renderer de coluna se não for grid de produção
                         if (grid && isGridDeProducao(grid)) {
                             if (isColunaDoBotaoFinalizar(column, grid)) {
                                 if (column.renderer !== renderizarBotaoFinalizarInline) {
@@ -6271,11 +6298,7 @@ function aplicarPatchesEstruturaisExtJS() {
                                         column._origRendererSalvo = true;
                                         column.origRenderer = column.renderer;
                                     }
-                                    column._headerOriginal = column._headerOriginal || column.text || column.header;
                                     column.renderer = renderizarBotaoFinalizarInline;
-                                    column.width = 85;
-                                    column.text = 'Ação';
-                                    column.header = 'Ação';
                                     column._rendererOtimizadoFinalizar = true;
                                 }
                             } else if (isColunaDeApontamento(column, grid)) {
@@ -6286,43 +6309,6 @@ function aplicarPatchesEstruturaisExtJS() {
                                     }
                                     column.renderer = renderizarProgressBarInline;
                                     column._rendererOtimizadoProgressBar = true;
-                                }
-                            }
-                        } else {
-                            // Se for outro grid e a coluna tiver sido contaminada, reverte na hora
-                            var colDIndex = String(column.dataIndex || '').trim();
-                            if (colDIndex === 'Acao') {
-                                if (column.renderer === renderizarBotaoFinalizarInline || column._rendererOtimizadoFinalizar) {
-                                    delete column._rendererOtimizadoFinalizar;
-                                    if (column.origRenderer && column.origRenderer !== renderizarBotaoFinalizarInline) {
-                                        column.renderer = column.origRenderer;
-                                    } else {
-                                        delete column.renderer;
-                                        column.renderer = null;
-                                    }
-                                    column.width = 40;
-                                    column.text = 'Ação';
-                                    column.header = 'Ação';
-                                }
-                            } else if (column.renderer === renderizarBotaoFinalizarInline || column._rendererOtimizadoFinalizar) {
-                                delete column._rendererOtimizadoFinalizar;
-                                var colTxt = String(column.text || column.header || '').trim();
-                                if (colTxt === 'Dependências' || colTxt === 'Dependencias' || (typeof window.formatarDependencias === 'function')) {
-                                    column.renderer = window.formatarDependencias || column.origRenderer;
-                                } else if (column.origRenderer && column.origRenderer !== renderizarBotaoFinalizarInline) {
-                                    column.renderer = column.origRenderer;
-                                } else {
-                                    delete column.renderer;
-                                    column.renderer = null;
-                                }
-                            }
-                            if (column.renderer === renderizarProgressBarInline || column._rendererOtimizadoProgressBar) {
-                                delete column._rendererOtimizadoProgressBar;
-                                if (column.origRenderer && column.origRenderer !== renderizarProgressBarInline) {
-                                    column.renderer = column.origRenderer;
-                                } else {
-                                    delete column.renderer;
-                                    column.renderer = null;
                                 }
                             }
                         }
@@ -7131,6 +7117,18 @@ const extJsInitializationMonitor = setInterval(() => {
             dispararFluxoFinalizacaoLote();
         };
 
+        // Ponte de retrocompatibilidade de variáveis globais e aliases legados
+        try {
+            ['__ERP_CACHE_LIBERACAO', '__ERP_FINALIZAR_EM_LOTE', '__ERP_ULTIMA_TENTATIVA_LIBERACAO', '__ERP_EM_OPERACAO_PRODUCAO', '__ERP_ULTIMO_ACAO_EXECUTAR'].forEach(function(prop) {
+                var alias = prop.replace('__ERP_', '__AG2WEB_');
+                Object.defineProperty(window, alias, {
+                    get: function() { return window[prop]; },
+                    set: function(v) { window[prop] = v; },
+                    configurable: true
+                });
+            });
+        } catch(e) {}
+
         // Ouvinte de sincronização imediata com o Popup da extensão
         var sincronizarComPopup = function() {
             try {
@@ -7149,7 +7147,8 @@ const extJsInitializationMonitor = setInterval(() => {
             } catch(e) {}
         };
         window.addEventListener('erp_modo_liberacao_alterado', sincronizarComPopup);
-        
+        window.addEventListener('ag2web_modo_liberacao_alterado', sincronizarComPopup);
+
         console.info("[ERP Optimizer] Extensão carregada com sucesso! Limite 500, Detecção Multi-Camadas e Finalização com Confirmação ativas.");
     }
 }, 50);
