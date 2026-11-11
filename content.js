@@ -3902,12 +3902,75 @@ function otimizarColunasDeTodosOsGrids() {
     } catch(e) {}
 }
 
+// Filtra as OPs em memória instantaneamente quando o usuário alterna o Modo Liberação
+function aplicarFiltroModoLiberacaoEmMemoria(grid, isModoLiberacaoAtivo) {
+    if (!grid || !window.__ERP_CACHE_LIBERACAO) return false;
+
+    var brutos = window.__ERP_CACHE_LIBERACAO.todosRegistrosBrutos;
+    if (!Array.isArray(brutos) || brutos.length === 0) {
+        brutos = window.__ERP_CACHE_LIBERACAO.registros;
+    }
+    if (!Array.isArray(brutos) || brutos.length === 0) return false;
+
+    var bloqueadas = typeof obterOpsBloqueadasMRP === 'function' ? obterOpsBloqueadasMRP() : {};
+    var filtrados = brutos.filter(function(item) {
+        if (!item) return false;
+        if (typeof isOpBloqueadaMRP === 'function' && isOpBloqueadaMRP(item, bloqueadas)) return false;
+        if (isModoLiberacaoAtivo) {
+            return item.PossuiDependencia === false;
+        }
+        return true;
+    });
+
+    var store = grid.getStore ? grid.getStore() : null;
+    var sorterAtivo = (store && store.sorters && store.sorters.first) ? store.sorters.first() : null;
+    if (sorterAtivo && sorterAtivo.property) {
+        filtrados.sort(function(a, b) {
+            return compararValoresGridProducao(a, b, sorterAtivo.property, sorterAtivo.direction);
+        });
+    } else {
+        var ordenacaoData = sessionStorage.getItem('ORDENACAO_DATA_OP') || localStorage.getItem('ORDENACAO_DATA_OP') || 'padrao';
+        if (ordenacaoData === 'desc' || ordenacaoData === 'asc') {
+            filtrados.sort(function(a, b) {
+                return compararValoresGridProducao(a, b, 'DataDeMovimentacao', ordenacaoData);
+            });
+        }
+    }
+
+    window.__ERP_CACHE_LIBERACAO.registros = filtrados;
+    window.__ERP_CACHE_LIBERACAO.isModoLiberacao = isModoLiberacaoAtivo;
+
+    if (store) {
+        store.totalCount = filtrados.length;
+        if (typeof store.loadData === 'function') {
+            store.loadData(filtrados.slice(0, 500));
+        }
+    }
+
+    var pt = grid.down ? grid.down('pagingtoolbar') : null;
+    if (pt && typeof pt.onLoad === 'function') {
+        pt.onLoad();
+    }
+
+    if (isModoLiberacaoAtivo) {
+        mostrarToastNotificacao('<b>' + filtrados.length.toLocaleString('pt-BR') + '</b> OPs sem dependência (filtrado instantaneamente)');
+    } else {
+        mostrarToastNotificacao('<b>' + filtrados.length.toLocaleString('pt-BR') + '</b> OPs totais exibidas');
+    }
+    return true;
+}
+
 function atualizarElementosDoGrid(grid) {
     if (!grid || !grid.rendered || grid.isDestroyed || !isGridDeProducao(grid)) return;
     
     injetarEstilosPersonalizados();
     removerBotaoFlutuante();
     preencherDatasPadraoProducao();
+
+    // Se não houver busca em andamento, garante que os controles estejam liberados
+    if (!window.__ERP_BUSCA_EM_ANDAMENTO && typeof window.__ERP_DESBLOQUEAR_INTERFACE === 'function') {
+        window.__ERP_DESBLOQUEAR_INTERFACE();
+    }
 
     // 1. Sincroniza limite para 500 registros
     sincronizarGridPara500(grid);
@@ -3991,27 +4054,50 @@ function atualizarElementosDoGrid(grid) {
                                 mostrarToastNotificacao('Aguarde a busca atual concluir antes de alterar o Modo Liberação.', '#d97706');
                                 return;
                             }
-                            var valStr = String(novoValor);
+                            var isAtivo = !!novoValor;
+                            var valStr = String(isAtivo);
                             sessionStorage.setItem('MODO_LIBERACAO_OP', valStr);
                             localStorage.setItem('MODO_LIBERACAO_OP', valStr);
                             sessionStorage.setItem('ULTIMO_CLIQUE_MANUAL', String(Date.now()));
-                            window.__ERP_CACHE_LIBERACAO = null;
                             
                             try {
                                 if (window.chrome && window.chrome.storage && window.chrome.storage.local) {
-                                    window.chrome.storage.local.set({ modoLiberacao: !!novoValor });
+                                    window.chrome.storage.local.set({ modoLiberacao: isAtivo });
                                 }
                             } catch(e) {}
 
-                            window.dispatchEvent(new CustomEvent('erp_modo_liberacao_alterado', { detail: { ativo: !!novoValor } }));
-                            window.dispatchEvent(new CustomEvent('ag2web_modo_liberacao_alterado', { detail: { ativo: !!novoValor } }));
-                            mostrarToastNotificacao(novoValor ? 'Modo Liberação ativado: buscando todas as OPs...' : 'Modo Liberação desativado');
+                            window.dispatchEvent(new CustomEvent('erp_modo_liberacao_alterado', { detail: { ativo: isAtivo } }));
+                            window.dispatchEvent(new CustomEvent('ag2web_modo_liberacao_alterado', { detail: { ativo: isAtivo } }));
 
+                            var store = grid.getStore ? grid.getStore() : null;
                             var pt = grid.down ? grid.down('pagingtoolbar') : null;
-                            if (pt) {
+                            var countStore = (store && typeof store.getCount === 'function') ? store.getCount() : 0;
+                            var totalCount = (store && typeof store.getTotalCount === 'function') ? store.getTotalCount() : (store ? store.totalCount : 0);
+                            var temDadosNoGrid = (countStore > 0) || (totalCount > 0);
+                            var temCacheMemoria = window.__ERP_CACHE_LIBERACAO && Array.isArray(window.__ERP_CACHE_LIBERACAO.registros) && window.__ERP_CACHE_LIBERACAO.registros.length > 0;
+
+                            // 1. Grid ainda não foi consultado ou está vazio: salva o estado e não faz requisição vazia
+                            if (!temDadosNoGrid && !temCacheMemoria) {
+                                mostrarToastNotificacao(isAtivo ? 'Modo Liberação ativado. Clique em "Buscar" para carregar as OPs.' : 'Modo Liberação desativado.');
+                                return;
+                            }
+
+                            // 2. Se já possuímos os dados em cache na memória, filtra instantaneamente sem requisição de rede
+                            if (temCacheMemoria && typeof aplicarFiltroModoLiberacaoEmMemoria === 'function') {
+                                if (aplicarFiltroModoLiberacaoEmMemoria(grid, isAtivo)) {
+                                    return;
+                                }
+                            }
+
+                            // 3. Se existem dados no grid mas sem cache em memória, dispara a busca pelos controles do formulário
+                            window.__ERP_CACHE_LIBERACAO = null;
+                            var btnBuscar = window.Ext && window.Ext.ComponentQuery ? window.Ext.ComponentQuery.query('button[text="Buscar"], button[text*="Buscar"], button[tooltip*="Buscar"], button[iconCls*="Pesquisar"]')[0] : null;
+                            if (btnBuscar && !btnBuscar.disabled && btnBuscar.handler) {
+                                btnBuscar.handler.call(btnBuscar.scope || btnBuscar, btnBuscar);
+                            } else if (pt) {
                                 pt.doRefresh();
-                            } else if (grid.getStore) {
-                                grid.getStore().loadPage(1);
+                            } else if (store) {
+                                store.loadPage(1);
                             }
                         }
                     }
@@ -6563,45 +6649,66 @@ const extJsInitializationMonitor = setInterval(() => {
             try {
                 if (!window.Ext || !window.Ext.ComponentQuery) return;
 
-                // 1. Bloqueia ou desbloqueia o botão 'Buscar' da barra de ferramentas principal
-                var botoesBuscar = window.Ext.ComponentQuery.query('button[text="Buscar"], button[tooltip*="Buscar"], button[iconCls*="Pesquisar"]');
-                botoesBuscar.forEach(function(b) {
-                    if (b && !b.isDestroyed && typeof b.setDisabled === 'function') {
-                        b.setDisabled(bloquear);
+                if (bloquear) {
+                    // Limpa timer failsafe anterior se houver
+                    if (window.__ERP_FAILSAFE_BUSCA_TIMER) {
+                        clearTimeout(window.__ERP_FAILSAFE_BUSCA_TIMER);
+                        window.__ERP_FAILSAFE_BUSCA_TIMER = null;
                     }
-                });
+                    // Failsafe de 15 segundos para desbloquear a interface automaticamente caso ocorra timeout silencioso
+                    window.__ERP_FAILSAFE_BUSCA_TIMER = setTimeout(function() {
+                        if (window.__ERP_BUSCA_EM_ANDAMENTO) {
+                            console.warn('[ERP Optimizer] Failsafe: tempo limite atingido (15s), liberando interface.');
+                            bloquearInterfaceDuranteBusca(false);
+                            mostrarToastNotificacao('Tempo limite da busca atingido. Interface liberada.', '#d97706');
+                        }
+                    }, 15000);
 
-                // 2. Se for Modo Liberação ativo (ou ao desbloquear), bloqueia os filtros e o checkbox
-                if (bloquear && isModoLiberacao) {
-                    // Bloqueia Fieldset de Filtros
-                    var filtros = window.Ext.ComponentQuery.query('[itemid="filtrosParaConsultaProducao"]');
-                    filtros.forEach(function(f) {
-                        if (f && f.rendered && !f.isDestroyed) {
-                            if (typeof f.mask === 'function') {
-                                f.mask('Buscando no banco de dados...');
-                            } else if (typeof f.setDisabled === 'function') {
-                                f.setDisabled(true);
+                    // 1. Bloqueia o botão 'Buscar' da barra de ferramentas principal para evitar cliques sobrepostos
+                    var botoesBuscar = window.Ext.ComponentQuery.query('button[text="Buscar"], button[text*="Buscar"], button[tooltip*="Buscar"], button[iconCls*="Pesquisar"]');
+                    botoesBuscar.forEach(function(b) {
+                        if (b && !b.isDestroyed && typeof b.setDisabled === 'function') {
+                            b.setDisabled(true);
+                        }
+                    });
+
+                    // 2. Se for Modo Liberação ativo, bloqueia os filtros e botões de lote
+                    if (isModoLiberacao) {
+                        var filtros = window.Ext.ComponentQuery.query('[itemid="filtrosParaConsultaProducao"]');
+                        filtros.forEach(function(f) {
+                            if (f && f.rendered && !f.isDestroyed) {
+                                if (typeof f.mask === 'function') {
+                                    f.mask('Buscando no banco de dados...');
+                                } else if (typeof f.setDisabled === 'function') {
+                                    f.setDisabled(true);
+                                }
                             }
+                        });
+
+                        // Bloqueia outros botões da toolbar durante a busca
+                        var btnsGrid = window.Ext.ComponentQuery.query('#btnOpsBloqueadasMRP, #btnFinalizarSelecionadasTop, #btnFinalizarSelecionadasPt');
+                        btnsGrid.forEach(function(btn) {
+                            if (btn && !btn.isDestroyed && typeof btn.setDisabled === 'function') {
+                                btn.setDisabled(true);
+                            }
+                        });
+                    }
+                } else {
+                    // DESBLOQUEIA TUDO
+                    if (window.__ERP_FAILSAFE_BUSCA_TIMER) {
+                        clearTimeout(window.__ERP_FAILSAFE_BUSCA_TIMER);
+                        window.__ERP_FAILSAFE_BUSCA_TIMER = null;
+                    }
+
+                    // Habilita botões Buscar
+                    var botoesBuscar = window.Ext.ComponentQuery.query('button[text="Buscar"], button[text*="Buscar"], button[tooltip*="Buscar"], button[iconCls*="Pesquisar"], button[action="buscar"], [itemid="btnBuscar"]');
+                    botoesBuscar.forEach(function(b) {
+                        if (b && !b.isDestroyed && typeof b.setDisabled === 'function') {
+                            b.setDisabled(false);
                         }
                     });
 
-                    // Bloqueia Checkbox Modo Liberação
-                    var chks = window.Ext.ComponentQuery.query('#chkModoLiberacaoTop');
-                    chks.forEach(function(c) {
-                        if (c && !c.isDestroyed && typeof c.setDisabled === 'function') {
-                            c.setDisabled(true);
-                        }
-                    });
-
-                    // Bloqueia outros botões da toolbar durante a busca
-                    var btnsGrid = window.Ext.ComponentQuery.query('#btnOpsBloqueadasMRP, #btnFinalizarSelecionadasTop, #btnFinalizarSelecionadasPt');
-                    btnsGrid.forEach(function(btn) {
-                        if (btn && !btn.isDestroyed && typeof btn.setDisabled === 'function') {
-                            btn.setDisabled(true);
-                        }
-                    });
-                } else if (!bloquear) {
-                    // Desbloqueia tudo ao concluir ou falhar
+                    // Desmascara e habilita Fieldset de Filtros
                     var filtros = window.Ext.ComponentQuery.query('[itemid="filtrosParaConsultaProducao"]');
                     filtros.forEach(function(f) {
                         if (f && f.rendered && !f.isDestroyed) {
@@ -6614,6 +6721,7 @@ const extJsInitializationMonitor = setInterval(() => {
                         }
                     });
 
+                    // Garante que o checkbox do Modo Liberação esteja sempre habilitado e clicável
                     var chks = window.Ext.ComponentQuery.query('#chkModoLiberacaoTop');
                     chks.forEach(function(c) {
                         if (c && !c.isDestroyed && typeof c.setDisabled === 'function') {
@@ -6621,17 +6729,40 @@ const extJsInitializationMonitor = setInterval(() => {
                         }
                     });
 
+                    // Habilita botões de ação e MRP
                     var btnsGrid = window.Ext.ComponentQuery.query('#btnOpsBloqueadasMRP, #btnFinalizarSelecionadasTop, #btnFinalizarSelecionadasPt');
                     btnsGrid.forEach(function(btn) {
                         if (btn && !btn.isDestroyed && typeof btn.setDisabled === 'function') {
                             btn.setDisabled(false);
                         }
                     });
+
+                    // Remove máscaras pendentes do grid
+                    try {
+                        var grid = obterGridProducaoAtivo();
+                        if (grid) {
+                            if (grid.loadMask && typeof grid.loadMask.hide === 'function') grid.loadMask.hide();
+                            var v = grid.getView ? grid.getView() : null;
+                            if (v && v.loadMask && typeof v.loadMask.hide === 'function') v.loadMask.hide();
+                        }
+                    } catch(e) {}
                 }
             } catch(e) {
                 console.warn('[ERP Optimizer] Erro ao alternar bloqueio da interface:', e);
             }
         }
+        window.__ERP_DESBLOQUEAR_INTERFACE = function() {
+            bloquearInterfaceDuranteBusca(false);
+        };
+
+        // Tecla ESC para desbloqueio manual de emergência caso a rede do ERP trave
+        window.addEventListener('keydown', function(ev) {
+            if (ev.key === 'Escape' && window.__ERP_BUSCA_EM_ANDAMENTO) {
+                console.warn('[ERP Optimizer] Tecla ESC pressionada: desbloqueando interface manualmente.');
+                bloquearInterfaceDuranteBusca(false);
+                mostrarToastNotificacao('Interface liberada manualmente.', '#2563eb');
+            }
+        });
 
         function removerMascaraCarregamento() {
             bloquearInterfaceDuranteBusca(false);
@@ -6766,6 +6897,16 @@ const extJsInitializationMonitor = setInterval(() => {
                     success: function(resp) {
                         ativos--;
                         if (idBusca === idBuscaAtual) {
+                            // Renova o timer de segurança enquanto os chunks estiverem respondendo ativamente
+                            if (window.__ERP_FAILSAFE_BUSCA_TIMER) {
+                                clearTimeout(window.__ERP_FAILSAFE_BUSCA_TIMER);
+                                window.__ERP_FAILSAFE_BUSCA_TIMER = setTimeout(function() {
+                                    if (window.__ERP_BUSCA_EM_ANDAMENTO) {
+                                        console.warn('[ERP Optimizer] Failsafe: chunks pararam de chegar, liberando interface.');
+                                        bloquearInterfaceDuranteBusca(false);
+                                    }
+                                }, 15000);
+                            }
                             try {
                                 var pacote = Ext.decode(resp.responseText);
                                 if (pacote && Array.isArray(pacote.registros) && pacote.registros.length > 0) {
@@ -6773,6 +6914,13 @@ const extJsInitializationMonitor = setInterval(() => {
                                     var isModoAtivoChunk = (window.__ERP_CACHE_LIBERACAO && window.__ERP_CACHE_LIBERACAO.isModoLiberacao !== undefined)
                                         ? window.__ERP_CACHE_LIBERACAO.isModoLiberacao
                                         : ((sessionStorage.getItem('MODO_LIBERACAO_OP') || localStorage.getItem('MODO_LIBERACAO_OP')) === 'true');
+
+                                    if (window.__ERP_CACHE_LIBERACAO) {
+                                        if (!Array.isArray(window.__ERP_CACHE_LIBERACAO.todosRegistrosBrutos)) {
+                                            window.__ERP_CACHE_LIBERACAO.todosRegistrosBrutos = [];
+                                        }
+                                        window.__ERP_CACHE_LIBERACAO.todosRegistrosBrutos.push.apply(window.__ERP_CACHE_LIBERACAO.todosRegistrosBrutos, pacote.registros);
+                                    }
 
                                     var itensValidos = pacote.registros.filter(function(item) {
                                         if (isOpBloqueadaMRP(item, bloqueadasChunks)) return false;
@@ -6818,13 +6966,13 @@ const extJsInitializationMonitor = setInterval(() => {
         }
 
         function finalizarCargaChunks(idBusca) {
+            // Desbloqueia a interface garantidamente antes de qualquer checagem
+            bloquearInterfaceDuranteBusca(false);
+
             if (idBusca !== idBuscaAtual) return;
             if (!window.__ERP_CACHE_LIBERACAO || !Array.isArray(window.__ERP_CACHE_LIBERACAO.registros)) return;
 
             window.__ERP_CACHE_LIBERACAO.carregando = false;
-
-            // Desbloqueia a interface garantidamente
-            bloquearInterfaceDuranteBusca(false);
 
             // Ordenação global da carga: se o usuário já tiver uma coluna ordenada no grid, respeita ela; senão usa a preferência de data
             var gridTemp = obterGridProducaoAtivo();
@@ -6971,6 +7119,7 @@ const extJsInitializationMonitor = setInterval(() => {
                             if (typeof options.callback === 'function') options.callback.call(options.scope || window, options, true, respVazia);
                         } catch(e) {}
                     }, 10);
+                    bloquearInterfaceDuranteBusca(false);
                     return false;
                 }
 
@@ -7018,6 +7167,7 @@ const extJsInitializationMonitor = setInterval(() => {
                             }
                         }, 10);
                         
+                        bloquearInterfaceDuranteBusca(false);
                         return false; // Evita requisição de rede repetida
                     }
                 }
@@ -7038,15 +7188,8 @@ const extJsInitializationMonitor = setInterval(() => {
                 options._ehPrimeiroChunkLiberacao = true;
                 removerBadgeProgresso();
 
-                // Bloqueia a interface se estiver com Modo Liberação ativo
+                // Bloqueia a interface durante a busca (com failsafe de 15s)
                 bloquearInterfaceDuranteBusca(true, isModoLiberacaoAtivo);
-
-                // Timeout de segurança para desbloquear a interface caso ocorra falha de rede/servidor
-                setTimeout(function() {
-                    if (window.__ERP_BUSCA_EM_ANDAMENTO) {
-                        bloquearInterfaceDuranteBusca(false);
-                    }
-                }, 120000);
 
                 try {
                     otimizarColunasDeTodosOsGrids();
@@ -7139,10 +7282,11 @@ const extJsInitializationMonitor = setInterval(() => {
                             });
                         }
 
-                        // Armazena em cache as OPs carregadas deste primeiro lote
+                        // Armazena em cache as OPs carregadas deste primeiro lote (incluindo todosRegistrosBrutos)
                         window.__ERP_CACHE_LIBERACAO = {
                             timestamp: Date.now(),
                             registros: registrosProcessados.slice(),
+                            todosRegistrosBrutos: dados.registros.slice(),
                             totalBanco: totalOriginalBruto,
                             carregando: totalOriginalBruto > CHUNK_SIZE_SEGURO,
                             isModoLiberacao: isModoLiberacaoAtivo
@@ -7178,6 +7322,9 @@ const extJsInitializationMonitor = setInterval(() => {
                                 }
                             }, 50);
                         }
+                    } else {
+                        // Resposta sem registros ou não esperada: garante desbloqueio
+                        bloquearInterfaceDuranteBusca(false);
                     }
                 } catch (e) {
                     console.error("[ERP Optimizer] Erro ao tentar processar pacote do servidor.", e);
