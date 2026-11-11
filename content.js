@@ -134,29 +134,32 @@ function limparMascarasOrfas() {
     } catch (e) {}
 }
 
-// Fecha forçadamente qualquer popup ou máscara de "Autorização de Produção" presa na tela
+// Fecha apenas o diálogo de espera ("trabalhando" / barra de progresso) de Autorização de Produção quando necessário
 function fecharPopupAutorizacaoProducao() {
     try {
         if (window.Ext) {
-            // 1. Fecha o singleton Ext.Msg se for a mensagem de autorização
-            if (window.Ext.Msg) {
+            // 1. Fecha APENAS o diálogo de espera do Ext.Msg ("trabalhando" / "aguarde"), NUNCA alertas de erro, aviso ou confirmação
+            if (window.Ext.Msg && typeof window.Ext.Msg.isVisible === 'function' && window.Ext.Msg.isVisible()) {
                 try {
-                    var isMsgAberta = (typeof window.Ext.Msg.isVisible === 'function') ? window.Ext.Msg.isVisible() : false;
-                    var tit = (window.Ext.Msg.title || (window.Ext.Msg.header && window.Ext.Msg.header.title) || '').toString();
-                    if (isMsgAberta || tit.indexOf('Autoriza') !== -1 || tit.indexOf('trabalhando') !== -1) {
+                    var tit = (window.Ext.Msg.title || (window.Ext.Msg.header && window.Ext.Msg.header.title) || '').toString().toLowerCase();
+                    var msgText = (window.Ext.Msg.msg && window.Ext.Msg.msg.html ? window.Ext.Msg.msg.html : '').toString().toLowerCase();
+
+                    var ehApenasBarraEspera = (tit.indexOf('autoriza') !== -1 || tit.indexOf('trabalhando') !== -1 || msgText.indexOf('trabalhando') !== -1 || msgText.indexOf('aguarde') !== -1);
+                    var ehMensagemErroOuAviso = (tit.indexOf('erro') !== -1 || tit.indexOf('atenção') !== -1 || tit.indexOf('atencao') !== -1 || tit.indexOf('aviso') !== -1 || tit.indexOf('falha') !== -1 || tit.indexOf('alerta') !== -1);
+
+                    if (ehApenasBarraEspera && !ehMensagemErroOuAviso) {
                         if (typeof window.Ext.Msg.hide === 'function') window.Ext.Msg.hide();
-                        if (typeof window.Ext.Msg.close === 'function') window.Ext.Msg.close();
                     }
                 } catch(e) {}
             }
 
-            // 2. Procura qualquer janela aberta com título "Autorização de Produção"
+            // 2. Procura qualquer janela de progresso específica travada
             if (window.Ext.ComponentQuery) {
                 var janelas = window.Ext.ComponentQuery.query('window') || [];
                 janelas.forEach(function(w) {
                     if (w && !w.isDestroyed) {
-                        var t = (w.title || '').toString();
-                        if (t.indexOf('Autorização de Produção') !== -1 || (t.indexOf('Autoriza') !== -1 && w.down && w.down('progressbar'))) {
+                        var t = (w.title || '').toString().toLowerCase();
+                        if (t.indexOf('autorização de produção') !== -1 && w.down && w.down('progressbar')) {
                             try { w.close(); } catch(e) { try { w.hide(); } catch(e2){} }
                         }
                     }
@@ -177,6 +180,26 @@ function fecharPopupAutorizacaoProducao() {
         limparMascarasOrfas();
     } catch(err) {
         console.warn('[ERP Optimizer] Erro ao fechar popup de autorização:', err);
+    }
+}
+
+// Recarrega os dados do grid após autorizações ou finalizações para exibir o novo status (verde / autorizado)
+function recarregarGridAposOperacaoProducao() {
+    try {
+        window.__ERP_CACHE_LIBERACAO = null;
+        var grid = obterGridProducaoAtivo();
+        if (!grid || !grid.rendered || grid.isDestroyed) return;
+
+        var pt = grid.down ? grid.down('pagingtoolbar') : null;
+        var store = grid.getStore ? grid.getStore() : null;
+
+        if (pt && typeof pt.doRefresh === 'function') {
+            pt.doRefresh();
+        } else if (store && typeof store.loadPage === 'function') {
+            store.loadPage(store.currentPage || 1);
+        }
+    } catch(e) {
+        console.warn('[ERP Optimizer] Erro ao recarregar grade pós-operação:', e);
     }
 }
 
@@ -6461,12 +6484,18 @@ function aplicarPatchesEstruturaisExtJS() {
             if (ctrlProto.acaoExecutar && !ctrlProto.acaoExecutar._interceptado500) {
                 var origAcaoExecutar = ctrlProto.acaoExecutar;
                 ctrlProto.acaoExecutar = function(a, r) {
-                    // Se for chamada periódica de auto-refresh (r === true), bloqueia antes de emitir q.load()
+                    // Se for chamada com r === true (refresh de fundo ou pós-operação)
                     if (r === true) {
-                        const bloquearAutoRefresh = (sessionStorage.getItem('BLOQUEAR_AUTO_REFRESH_OP') ?? localStorage.getItem('BLOQUEAR_AUTO_REFRESH_OP')) !== 'false';
-                        if (bloquearAutoRefresh) {
-                            console.info('[ERP Optimizer] Auto-refresh periódico de 30s prevenido com sucesso.');
-                            return;
+                        var tempoDesdeOperacao = Date.now() - (window.__ERP_EM_OPERACAO_PRODUCAO || 0);
+                        if (tempoDesdeOperacao < 60000) {
+                            console.info('[ERP Optimizer] Refresh pós-operação de produção permitido.');
+                            window.__ERP_CACHE_LIBERACAO = null;
+                        } else {
+                            const bloquearAutoRefresh = (sessionStorage.getItem('BLOQUEAR_AUTO_REFRESH_OP') ?? localStorage.getItem('BLOQUEAR_AUTO_REFRESH_OP')) !== 'false';
+                            if (bloquearAutoRefresh) {
+                                console.info('[ERP Optimizer] Auto-refresh periódico de 30s prevenido com sucesso.');
+                                return;
+                            }
                         }
                     }
 
@@ -7207,7 +7236,7 @@ const extJsInitializationMonitor = setInterval(() => {
                 return; // Chunk interno já tratado pelo callback
             }
 
-            // Se terminou uma autorização de produção, fecha o popup e limpa qualquer máscara travada
+            // Se terminou uma autorização de produção, analisa a resposta, invalida cache e recarrega a grade
             if (options.url && (options.url.indexOf('AutorizarProducao') !== -1 || options.url.indexOf('AutorizarProducaoAdministrativamente') !== -1)) {
                 window.__ERP_EM_OPERACAO_PRODUCAO = Date.now();
                 window.__ERP_ULTIMO_ACAO_EXECUTAR = Date.now();
@@ -7216,11 +7245,35 @@ const extJsInitializationMonitor = setInterval(() => {
                     sessionStorage.setItem('ULTIMO_CLIQUE_MANUAL', String(Date.now()));
                 } catch(e) {}
 
-                fecharPopupAutorizacaoProducao();
-                setTimeout(fecharPopupAutorizacaoProducao, 30);
-                setTimeout(fecharPopupAutorizacaoProducao, 120);
-                setTimeout(fecharPopupAutorizacaoProducao, 350);
-                setTimeout(fecharPopupAutorizacaoProducao, 800);
+                // Invalida o cache de OPs para garantir que a grade busque dados frescos
+                window.__ERP_CACHE_LIBERACAO = null;
+
+                // Analisa a resposta do servidor para feedback claro
+                try {
+                    var respTexto = (response && response.responseText) ? response.responseText : '';
+                    var objResp = null;
+                    try { objResp = window.Ext.decode(respTexto); } catch(e) {}
+
+                    if (objResp) {
+                        if (objResp.success === false || objResp.sucesso === false || (Array.isArray(objResp.errors) && objResp.errors.length > 0)) {
+                            var msgErro = objResp.mensagem || objResp.message || (objResp.errors ? objResp.errors.join('; ') : 'Não foi possível autorizar as operações.');
+                            console.warn('[ERP Optimizer] Resposta de falha na autorização:', msgErro);
+                            mostrarToastNotificacao('<b>Atenção:</b> ' + msgErro, '#dc2626');
+                        } else if (objResp.success === true || objResp.sucesso === true) {
+                            mostrarToastNotificacao('Operação(ões) autorizada(s) com sucesso!', '#16a34a');
+                        }
+                    }
+                } catch(e) {}
+
+                // Fecha a barra de espera suavemente se ainda estiver visível após 500ms
+                setTimeout(function() {
+                    fecharPopupAutorizacaoProducao();
+                }, 500);
+
+                // Recarrega a grade após a autorização para exibir o status atualizado
+                setTimeout(function() {
+                    recarregarGridAposOperacaoProducao();
+                }, 700);
             }
 
             // Verifica se a resposta foi de AutorizarProducao e se retornou algum erro de MRP em 200
@@ -7376,10 +7429,9 @@ const extJsInitializationMonitor = setInterval(() => {
             bloquearInterfaceDuranteBusca(false);
             if (options && options._isBuscaAutomaticaCsv) return;
             if (options.url && (options.url.indexOf('AutorizarProducao') !== -1 || options.url.indexOf('AutorizarProducaoAdministrativamente') !== -1)) {
-                fecharPopupAutorizacaoProducao();
-                setTimeout(fecharPopupAutorizacaoProducao, 30);
-                setTimeout(fecharPopupAutorizacaoProducao, 120);
-                setTimeout(fecharPopupAutorizacaoProducao, 350);
+                setTimeout(function() {
+                    fecharPopupAutorizacaoProducao();
+                }, 500);
             }
             tratarPossivelErroMRP(response, options);
         });
