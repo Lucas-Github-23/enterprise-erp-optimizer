@@ -2715,7 +2715,7 @@ function injetarEstilosPersonalizados() {
             box-shadow: inset 0 1px 0 #ffffff, 0 1px 1px rgba(220, 38, 38, 0.1) !important;
             cursor: pointer !important;
             padding: 2px 8px !important;
-            margin-left: 8px !important;
+            margin: 0 16px 0 8px !important;
             vertical-align: middle !important;
         }
         .ag-btn-mrp .x-btn-inner {
@@ -3984,6 +3984,13 @@ function atualizarElementosDoGrid(grid) {
                     cls: 'ag-checkbox-extjs',
                     listeners: {
                         change: function(campo, novoValor) {
+                            if (window.__ERP_BUSCA_EM_ANDAMENTO) {
+                                campo.suspendEvents(false);
+                                campo.setValue(!novoValor);
+                                campo.resumeEvents();
+                                mostrarToastNotificacao('Aguarde a busca atual concluir antes de alterar o Modo Liberação.', '#d97706');
+                                return;
+                            }
                             var valStr = String(novoValor);
                             sessionStorage.setItem('MODO_LIBERACAO_OP', valStr);
                             localStorage.setItem('MODO_LIBERACAO_OP', valStr);
@@ -4024,6 +4031,7 @@ function atualizarElementosDoGrid(grid) {
                     text: 'MRP (' + qtdBloqInicial + ')',
                     tooltip: 'Operações com pendência de MRP ocultadas (clique para listar ou restaurar)',
                     cls: 'ag-btn-mrp',
+                    margin: '0 16 0 8',
                     hidden: qtdBloqInicial === 0,
                     handler: function() {
                         abrirJanelaOpsBloqueadasMRP();
@@ -4076,6 +4084,7 @@ function atualizarElementosDoGrid(grid) {
                         text: 'MRP (' + qtdBloqAtual + ')',
                         tooltip: 'Operações com pendência de MRP ocultadas (clique para listar ou restaurar)',
                         cls: 'ag-btn-mrp',
+                        margin: '0 16 0 8',
                         hidden: qtdBloqAtual === 0,
                         handler: function() {
                             abrirJanelaOpsBloqueadasMRP();
@@ -6375,6 +6384,13 @@ function aplicarPatchesEstruturaisExtJS() {
                         }
                     }
 
+                    // Impede buscas simultâneas ou sobreposição de busca enquanto uma carga estiver em andamento
+                    if (window.__ERP_BUSCA_EM_ANDAMENTO) {
+                        mostrarToastNotificacao('Aguarde a busca atual ser concluída...', '#d97706');
+                        console.warn('[ERP Optimizer] Busca ignorada pois já existe uma consulta ativa em andamento.');
+                        return;
+                    }
+
                     // Registra que a busca foi disparada explicitamente (manual ou pós-ação)
                     window.__ERP_ULTIMO_ACAO_EXECUTAR = Date.now();
                     ultimoMomentoUsuario = Date.now();
@@ -6541,7 +6557,84 @@ const extJsInitializationMonitor = setInterval(() => {
             } catch(e) {}
         }
 
+        function bloquearInterfaceDuranteBusca(bloquear, isModoLiberacao) {
+            window.__ERP_BUSCA_EM_ANDAMENTO = !!bloquear;
+
+            try {
+                if (!window.Ext || !window.Ext.ComponentQuery) return;
+
+                // 1. Bloqueia ou desbloqueia o botão 'Buscar' da barra de ferramentas principal
+                var botoesBuscar = window.Ext.ComponentQuery.query('button[text="Buscar"], button[tooltip*="Buscar"], button[iconCls*="Pesquisar"]');
+                botoesBuscar.forEach(function(b) {
+                    if (b && !b.isDestroyed && typeof b.setDisabled === 'function') {
+                        b.setDisabled(bloquear);
+                    }
+                });
+
+                // 2. Se for Modo Liberação ativo (ou ao desbloquear), bloqueia os filtros e o checkbox
+                if (bloquear && isModoLiberacao) {
+                    // Bloqueia Fieldset de Filtros
+                    var filtros = window.Ext.ComponentQuery.query('[itemid="filtrosParaConsultaProducao"]');
+                    filtros.forEach(function(f) {
+                        if (f && f.rendered && !f.isDestroyed) {
+                            if (typeof f.mask === 'function') {
+                                f.mask('Buscando no banco de dados...');
+                            } else if (typeof f.setDisabled === 'function') {
+                                f.setDisabled(true);
+                            }
+                        }
+                    });
+
+                    // Bloqueia Checkbox Modo Liberação
+                    var chks = window.Ext.ComponentQuery.query('#chkModoLiberacaoTop');
+                    chks.forEach(function(c) {
+                        if (c && !c.isDestroyed && typeof c.setDisabled === 'function') {
+                            c.setDisabled(true);
+                        }
+                    });
+
+                    // Bloqueia outros botões da toolbar durante a busca
+                    var btnsGrid = window.Ext.ComponentQuery.query('#btnOpsBloqueadasMRP, #btnFinalizarSelecionadasTop, #btnFinalizarSelecionadasPt');
+                    btnsGrid.forEach(function(btn) {
+                        if (btn && !btn.isDestroyed && typeof btn.setDisabled === 'function') {
+                            btn.setDisabled(true);
+                        }
+                    });
+                } else if (!bloquear) {
+                    // Desbloqueia tudo ao concluir ou falhar
+                    var filtros = window.Ext.ComponentQuery.query('[itemid="filtrosParaConsultaProducao"]');
+                    filtros.forEach(function(f) {
+                        if (f && f.rendered && !f.isDestroyed) {
+                            if (typeof f.unmask === 'function') {
+                                f.unmask();
+                            }
+                            if (typeof f.setDisabled === 'function') {
+                                f.setDisabled(false);
+                            }
+                        }
+                    });
+
+                    var chks = window.Ext.ComponentQuery.query('#chkModoLiberacaoTop');
+                    chks.forEach(function(c) {
+                        if (c && !c.isDestroyed && typeof c.setDisabled === 'function') {
+                            c.setDisabled(false);
+                        }
+                    });
+
+                    var btnsGrid = window.Ext.ComponentQuery.query('#btnOpsBloqueadasMRP, #btnFinalizarSelecionadasTop, #btnFinalizarSelecionadasPt');
+                    btnsGrid.forEach(function(btn) {
+                        if (btn && !btn.isDestroyed && typeof btn.setDisabled === 'function') {
+                            btn.setDisabled(false);
+                        }
+                    });
+                }
+            } catch(e) {
+                console.warn('[ERP Optimizer] Erro ao alternar bloqueio da interface:', e);
+            }
+        }
+
         function removerMascaraCarregamento() {
+            bloquearInterfaceDuranteBusca(false);
             try {
                 var grid = obterGridProducaoAtivo();
                 if (grid) {
@@ -6557,7 +6650,7 @@ const extJsInitializationMonitor = setInterval(() => {
             } catch(e) {}
         }
 
-        function atualizarBadgeProgresso(processados, totalBanco, totalSemDep, concluido) {
+        function atualizarBadgeProgresso(processados, totalBanco, totalRegistros, concluido) {
             try {
                 // Remove qualquer badge flutuante antigo se houver
                 var elAntigo = document.getElementById('erp-badge-progresso');
@@ -6571,12 +6664,19 @@ const extJsInitializationMonitor = setInterval(() => {
                 var comp = obterOuCriarComponenteProgresso(topTb);
                 if (!comp) return;
 
+                var isModo = (window.__ERP_CACHE_LIBERACAO && window.__ERP_CACHE_LIBERACAO.isModoLiberacao !== undefined)
+                    ? window.__ERP_CACHE_LIBERACAO.isModoLiberacao
+                    : ((sessionStorage.getItem('MODO_LIBERACAO_OP') || localStorage.getItem('MODO_LIBERACAO_OP')) === 'true');
+
+                var rotuloItem = isModo ? 'OPs prontas' : 'ordens carregadas';
+                var rotuloItemCurto = isModo ? 'prontas' : 'ordens';
+
                 if (concluido) {
                     comp.show();
                     if (comp.update) {
                         comp.update(
                             '<span class="ag-progresso-concluido">' +
-                            '<b>' + totalSemDep.toLocaleString('pt-BR') + '</b> OPs prontas (' + totalBanco.toLocaleString('pt-BR') + ' no banco)' +
+                            '<b>' + totalRegistros.toLocaleString('pt-BR') + '</b> ' + rotuloItem + ' (' + totalBanco.toLocaleString('pt-BR') + ' no banco)' +
                             '</span>'
                         );
                     }
@@ -6598,7 +6698,7 @@ const extJsInitializationMonitor = setInterval(() => {
                     comp.update(
                         '<span class="ag-progresso-ativo">' +
                         '<span class="ag-tb-spinner"></span>' +
-                        'Carregando banco: <b>' + processados.toLocaleString('pt-BR') + '</b> / ' + totalBanco.toLocaleString('pt-BR') + ' (' + pct + '%) • <b>' + totalSemDep.toLocaleString('pt-BR') + '</b> prontas' +
+                        'Carregando banco: <b>' + processados.toLocaleString('pt-BR') + '</b> / ' + totalBanco.toLocaleString('pt-BR') + ' (' + pct + '%) • <b>' + totalRegistros.toLocaleString('pt-BR') + '</b> ' + rotuloItemCurto +
                         '</span>'
                     );
                 }
@@ -6670,11 +6770,21 @@ const extJsInitializationMonitor = setInterval(() => {
                                 var pacote = Ext.decode(resp.responseText);
                                 if (pacote && Array.isArray(pacote.registros) && pacote.registros.length > 0) {
                                     var bloqueadasChunks = obterOpsBloqueadasMRP();
-                                    var semDep = pacote.registros.filter(function(item) {
-                                        return item && item.PossuiDependencia === false && !isOpBloqueadaMRP(item, bloqueadasChunks);
+                                    var isModoAtivoChunk = (window.__ERP_CACHE_LIBERACAO && window.__ERP_CACHE_LIBERACAO.isModoLiberacao !== undefined)
+                                        ? window.__ERP_CACHE_LIBERACAO.isModoLiberacao
+                                        : ((sessionStorage.getItem('MODO_LIBERACAO_OP') || localStorage.getItem('MODO_LIBERACAO_OP')) === 'true');
+
+                                    var itensValidos = pacote.registros.filter(function(item) {
+                                        if (isOpBloqueadaMRP(item, bloqueadasChunks)) return false;
+                                        // Se Modo Liberação estiver ativo, filtra dependências; se desativado, traz todos os itens
+                                        if (isModoAtivoChunk) {
+                                            return item && item.PossuiDependencia === false;
+                                        }
+                                        return true;
                                     });
+
                                     if (window.__ERP_CACHE_LIBERACAO && Array.isArray(window.__ERP_CACHE_LIBERACAO.registros)) {
-                                        window.__ERP_CACHE_LIBERACAO.registros.push.apply(window.__ERP_CACHE_LIBERACAO.registros, semDep);
+                                        window.__ERP_CACHE_LIBERACAO.registros.push.apply(window.__ERP_CACHE_LIBERACAO.registros, itensValidos);
                                     }
                                 }
                                 processadosContador += CHUNK_SIZE_SEGURO;
@@ -6713,8 +6823,10 @@ const extJsInitializationMonitor = setInterval(() => {
 
             window.__ERP_CACHE_LIBERACAO.carregando = false;
 
-            // Ordenação global se configurada
-            // Ordenacao global da carga: se o usuario ja tiver uma coluna ordenada no grid, respeita ela; senao usa a preferencia de data
+            // Desbloqueia a interface garantidamente
+            bloquearInterfaceDuranteBusca(false);
+
+            // Ordenação global da carga: se o usuário já tiver uma coluna ordenada no grid, respeita ela; senão usa a preferência de data
             var gridTemp = obterGridProducaoAtivo();
             var storeTemp = (gridTemp && gridTemp.getStore) ? gridTemp.getStore() : null;
             var sorterAtivo = (storeTemp && storeTemp.sorters && storeTemp.sorters.first) ? storeTemp.sorters.first() : null;
@@ -6750,9 +6862,15 @@ const extJsInitializationMonitor = setInterval(() => {
                 }
             }
 
+            var isModo = window.__ERP_CACHE_LIBERACAO.isModoLiberacao;
             atualizarBadgeProgresso(window.__ERP_CACHE_LIBERACAO.totalBanco, window.__ERP_CACHE_LIBERACAO.totalBanco, totalReal, true);
-            mostrarToastNotificacao('<b>' + totalReal.toLocaleString('pt-BR') + '</b> OPs sem dependência carregadas de toda a busca (' + window.__ERP_CACHE_LIBERACAO.totalBanco.toLocaleString('pt-BR') + ' no banco)!');
-            console.info('[ERP Optimizer] Carga integral concluída: ' + totalReal + ' OPs sem dependência disponíveis.');
+            if (isModo) {
+                mostrarToastNotificacao('<b>' + totalReal.toLocaleString('pt-BR') + '</b> OPs sem dependência carregadas de toda a busca (' + window.__ERP_CACHE_LIBERACAO.totalBanco.toLocaleString('pt-BR') + ' no banco)!');
+                console.info('[ERP Optimizer] Carga integral concluída: ' + totalReal + ' OPs sem dependência disponíveis.');
+            } else {
+                mostrarToastNotificacao('<b>' + totalReal.toLocaleString('pt-BR') + '</b> ordens de produção carregadas com sucesso (' + window.__ERP_CACHE_LIBERACAO.totalBanco.toLocaleString('pt-BR') + ' no banco)!');
+                console.info('[ERP Optimizer] Carga integral concluída: ' + totalReal + ' ordens de produção disponíveis.');
+            }
         }
 
         window.Ext.Ajax.on('beforerequest', function(connection, options) {
@@ -6868,8 +6986,8 @@ const extJsInitializationMonitor = setInterval(() => {
                 var page = parseInt(options.params.page, 10) || 1;
 
                 // 1. Paginação instantânea em cache:
-                // Se Modo Liberação estiver ativo e o usuário estiver navegando para Página 2, 3, etc.
-                if (isModoLiberacaoAtivo && window.__ERP_CACHE_LIBERACAO && Array.isArray(window.__ERP_CACHE_LIBERACAO.registros) && (start > 0 || page > 1)) {
+                // Funciona para qualquer busca (com ou sem Modo Liberação) quando navegando de página
+                if (window.__ERP_CACHE_LIBERACAO && Array.isArray(window.__ERP_CACHE_LIBERACAO.registros) && (start > 0 || page > 1)) {
                     var idadeCache = Date.now() - (window.__ERP_CACHE_LIBERACAO.timestamp || 0);
                     if (idadeCache < 180000) { // Cache válido por 3 minutos
                         var todos = window.__ERP_CACHE_LIBERACAO.registros;
@@ -6905,7 +7023,7 @@ const extJsInitializationMonitor = setInterval(() => {
                 }
 
                 // 2. Consulta ao Servidor:
-                var limiteDesejado = isModoLiberacaoAtivo ? CHUNK_SIZE_SEGURO : 500;
+                var limiteDesejado = CHUNK_SIZE_SEGURO;
 
                 options.params.limit = limiteDesejado;
                 options.params.pageSize = limiteDesejado;
@@ -6916,11 +7034,19 @@ const extJsInitializationMonitor = setInterval(() => {
                     options.url = options.url.replace(/limit=\d+/, 'limit=' + limiteDesejado);
                 }
 
-                if (isModoLiberacaoAtivo) {
-                    idBuscaAtual++;
-                    options._ehPrimeiroChunkLiberacao = true;
-                    removerBadgeProgresso();
-                }
+                idBuscaAtual++;
+                options._ehPrimeiroChunkLiberacao = true;
+                removerBadgeProgresso();
+
+                // Bloqueia a interface se estiver com Modo Liberação ativo
+                bloquearInterfaceDuranteBusca(true, isModoLiberacaoAtivo);
+
+                // Timeout de segurança para desbloquear a interface caso ocorra falha de rede/servidor
+                setTimeout(function() {
+                    if (window.__ERP_BUSCA_EM_ANDAMENTO) {
+                        bloquearInterfaceDuranteBusca(false);
+                    }
+                }, 120000);
 
                 try {
                     otimizarColunasDeTodosOsGrids();
@@ -6988,76 +7114,74 @@ const extJsInitializationMonitor = setInterval(() => {
                 var bloqueadas = obterOpsBloqueadasMRP();
                 var temBloqueadas = Object.keys(bloqueadas).length > 0;
                 
-                if (isModoLiberacaoAtivo || ordenacaoData !== 'padrao' || temBloqueadas) {
-                    try {
-                        let dados = window.Ext.decode(response.responseText);
-                        
-                        if (dados && Array.isArray(dados.registros)) {
-                            let totalOriginalBruto = dados.total || dados.registros.length;
-                            let registrosProcessados = dados.registros;
+                try {
+                    let dados = window.Ext.decode(response.responseText);
+                    
+                    if (dados && Array.isArray(dados.registros)) {
+                        let totalOriginalBruto = dados.total || dados.registros.length;
+                        let registrosProcessados = dados.registros;
 
-                            // Filtra todas as operações bloqueadas por MRP salvas no localStorage
-                            if (temBloqueadas) {
-                                registrosProcessados = registrosProcessados.filter(item => !isOpBloqueadaMRP(item, bloqueadas));
-                            }
+                        // Filtra todas as operações bloqueadas por MRP salvas no localStorage
+                        if (temBloqueadas) {
+                            registrosProcessados = registrosProcessados.filter(item => !isOpBloqueadaMRP(item, bloqueadas));
+                        }
 
-                            // Filtra todas as OPs trazidas pelo primeiro chunk que não possuem dependências
+                        // Se Modo Liberação estiver ATIVO, filtra apenas as que não possuem dependências anteriores
+                        // Se Modo Liberação estiver DESATIVADO, MANTÉM TODAS as ordens (não analisa dependência)
+                        if (isModoLiberacaoAtivo) {
+                            registrosProcessados = registrosProcessados.filter(item => item && item.PossuiDependencia === false);
+                        }
+
+                        // Ordenação por data
+                        if (ordenacaoData === 'desc' || ordenacaoData === 'asc') {
+                            registrosProcessados.sort(function(a, b) {
+                                return compararValoresGridProducao(a, b, 'DataDeMovimentacao', ordenacaoData);
+                            });
+                        }
+
+                        // Armazena em cache as OPs carregadas deste primeiro lote
+                        window.__ERP_CACHE_LIBERACAO = {
+                            timestamp: Date.now(),
+                            registros: registrosProcessados.slice(),
+                            totalBanco: totalOriginalBruto,
+                            carregando: totalOriginalBruto > CHUNK_SIZE_SEGURO,
+                            isModoLiberacao: isModoLiberacaoAtivo
+                        };
+
+                        var tamanhoPagina = 500;
+                        dados.total = registrosProcessados.length;
+                        dados.registros = registrosProcessados.slice(0, tamanhoPagina);
+
+                        response.responseText = window.Ext.encode(dados);
+
+                        // Se o banco de dados tem mais registros do que o primeiro chunk seguro, busca o restante em paralelo
+                        if (totalOriginalBruto > CHUNK_SIZE_SEGURO) {
+                            atualizarBadgeProgresso(CHUNK_SIZE_SEGURO, totalOriginalBruto, registrosProcessados.length, false);
+                            var meuIdBusca = idBuscaAtual;
+                            setTimeout(function() {
+                                carregarRestanteChunksLiberacao(options, totalOriginalBruto, meuIdBusca);
+                            }, 40);
+                        } else {
+                            // Busca concluída com pacote único
+                            bloquearInterfaceDuranteBusca(false);
                             if (isModoLiberacaoAtivo) {
-                                registrosProcessados = registrosProcessados.filter(item => item && item.PossuiDependencia === false);
-                            }
-
-                            // Ordenação por data
-                            if (ordenacaoData === 'desc' || ordenacaoData === 'asc') {
-                                registrosProcessados.sort(function(a, b) {
-                                    return compararValoresGridProducao(a, b, 'DataDeMovimentacao', ordenacaoData);
-                                });
-                            }
-
-                            if (isModoLiberacaoAtivo) {
-                                // Armazena em cache as OPs do primeiro lote
-                                window.__ERP_CACHE_LIBERACAO = {
-                                    timestamp: Date.now(),
-                                    registros: registrosProcessados.slice(),
-                                    totalBanco: totalOriginalBruto,
-                                    carregando: totalOriginalBruto > CHUNK_SIZE_SEGURO
-                                };
-
-                                var tamanhoPagina = 500;
-                                dados.total = registrosProcessados.length;
-                                dados.registros = registrosProcessados.slice(0, tamanhoPagina);
-
-                                response.responseText = window.Ext.encode(dados);
-
-                                // Se o banco de dados tem mais registros do que o primeiro chunk seguro, busca o restante em paralelo sem bloquear a tela
-                                if (totalOriginalBruto > CHUNK_SIZE_SEGURO) {
-                                    atualizarBadgeProgresso(CHUNK_SIZE_SEGURO, totalOriginalBruto, registrosProcessados.length, false);
-                                    var meuIdBusca = idBuscaAtual;
-                                    setTimeout(function() {
-                                        carregarRestanteChunksLiberacao(options, totalOriginalBruto, meuIdBusca);
-                                    }, 40);
-                                } else {
-                                    mostrarToastNotificacao('<b>' + registrosProcessados.length + '</b> OPs sem dependência encontradas!');
-                                }
+                                mostrarToastNotificacao('<b>' + registrosProcessados.length.toLocaleString('pt-BR') + '</b> OPs sem dependência encontradas!');
                             } else {
-                                window.__ERP_CACHE_LIBERACAO = null;
-                                dados.registros = registrosProcessados;
-                                dados.total = Math.max(0, totalOriginalBruto - (dados.registros.length < totalOriginalBruto ? (totalOriginalBruto - registrosProcessados.length) : 0));
-                                response.responseText = window.Ext.encode(dados);
-                            }
-
-                            if (registrosProcessados.length === 0) {
-                                setTimeout(function() {
-                                    if (typeof desmarcarCabecalhoSelecaoGrid === 'function') {
-                                        desmarcarCabecalhoSelecaoGrid();
-                                    }
-                                }, 50);
+                                mostrarToastNotificacao('<b>' + registrosProcessados.length.toLocaleString('pt-BR') + '</b> ordens de produção carregadas!');
                             }
                         }
-                    } catch (e) {
-                        console.error("[ERP Optimizer] Erro ao tentar processar pacote do servidor.", e);
+
+                        if (registrosProcessados.length === 0) {
+                            setTimeout(function() {
+                                if (typeof desmarcarCabecalhoSelecaoGrid === 'function') {
+                                    desmarcarCabecalhoSelecaoGrid();
+                                }
+                            }, 50);
+                        }
                     }
-                } else {
-                    window.__ERP_CACHE_LIBERACAO = null;
+                } catch (e) {
+                    console.error("[ERP Optimizer] Erro ao tentar processar pacote do servidor.", e);
+                    bloquearInterfaceDuranteBusca(false);
                 }
             }
 
@@ -7102,6 +7226,7 @@ const extJsInitializationMonitor = setInterval(() => {
         });
 
         window.Ext.Ajax.on('requestexception', function(connection, response, options) {
+            bloquearInterfaceDuranteBusca(false);
             if (options && options._isBuscaAutomaticaCsv) return;
             if (options.url && (options.url.indexOf('AutorizarProducao') !== -1 || options.url.indexOf('AutorizarProducaoAdministrativamente') !== -1)) {
                 fecharPopupAutorizacaoProducao();
